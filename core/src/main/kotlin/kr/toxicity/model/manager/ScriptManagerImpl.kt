@@ -15,12 +15,13 @@ import kr.toxicity.model.api.script.ScriptBuilder
 import kr.toxicity.model.script.*
 import kr.toxicity.model.util.boneName
 import kr.toxicity.model.util.bonePredicate
+import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 
 object ScriptManagerImpl : ScriptManager, GlobalManager {
 
-    private val scriptMap = hashMapOf<String, ScriptBuilder>()
+    private val scriptMap = ConcurrentHashMap<String, ScriptBuilder>()
     private val scriptPattern = Pattern.compile("^(?<name>[a-zA-Z]+)(:(?<argument>([\\w_\\-])+))?(\\{(?<metadata>([\\w\\W])+)})?$")
     private val validatePattern = Pattern.compile("^[a-z]+$")
 

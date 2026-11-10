@@ -15,12 +15,14 @@ import kr.toxicity.model.util.withComma
 import net.kyori.adventure.audience.Audience
 import net.kyori.adventure.bossbar.BossBar
 import net.kyori.adventure.text.format.NamedTextColor
+import java.util.concurrent.atomic.AtomicBoolean
 
 class BossBarIndicator(
     private val audience: Audience
 ) : ReloadIndicator {
 
-    private var showed = false
+    private val showed = AtomicBoolean()
+    private val closed = AtomicBoolean()
     private val bossBar by lazy {
         BossBar.bossBar(
             emptyComponentOf(),
@@ -28,12 +30,13 @@ class BossBarIndicator(
             BossBar.Color.GREEN,
             BossBar.Overlay.PROGRESS
         ).apply {
-            showed = true
+            showed.set(true)
             audience.showBossBar(this)
         }
     }
 
     override fun status(status: ReloadPipeline.Status) {
+        if (closed.get()) return
         bossBar.run {
             name(componentOf(status.status) {
                 append(" [${status.target}]".toComponent(NamedTextColor.AQUA))
@@ -44,6 +47,7 @@ class BossBarIndicator(
     }
 
     override fun close() {
-        if (showed) audience.hideBossBar(bossBar)
+        if (!closed.compareAndSet(false, true)) return
+        if (showed.get()) audience.hideBossBar(bossBar)
     }
 }

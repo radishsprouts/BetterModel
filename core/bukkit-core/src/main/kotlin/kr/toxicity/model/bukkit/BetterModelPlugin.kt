@@ -46,6 +46,10 @@ abstract class BetterModelPlugin : AbstractBetterModelPlugin() {
 
     private lateinit var props: BetterModelProperties
 
+    /** [onEnable] で managers の start() に入ったか。初回リロードの成否とは無関係に、終了処理を行うかの判定に使う。 */
+    @Volatile
+    private var started = false
+
     override fun onLoad() {
         super.onLoad()
         props = runCatching {
@@ -62,6 +66,9 @@ abstract class BetterModelPlugin : AbstractBetterModelPlugin() {
     }
 
     override fun onEnable() {
+        // onLoad で失敗した場合は props が無い（プラグインは無効化済み）
+        if (!::props.isInitialized) return
+        started = true
         props.managers.values.forEach(GlobalManager::start)
         ADVENTURE_PLATFORM
         if (isSnapshot) warn(
@@ -110,8 +117,13 @@ abstract class BetterModelPlugin : AbstractBetterModelPlugin() {
     }
 
     override fun onDisable() {
-        if (!firstLoad.get()) return
-        props.managers.values.forEach(GlobalManager::end)
+        if (!started) return
+        started = false
+        // 初回リロードが済んでいなくても start() 済みなら end() を呼ぶ（登録済みのハンドラ・リスナーの解除漏れを防ぐ）
+        // 1つの manager の失敗で残りの終了処理を飛ばさない
+        props.managers.values.forEach {
+            runCatching(it::end).handleFailure { "Unable to end manager: ${it.javaClass.simpleName}" }
+        }
         ADVENTURE_PLATFORM?.close()
     }
 

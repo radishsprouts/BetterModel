@@ -17,11 +17,14 @@ class ReloadPipeline(
     private val indicators: List<ReloadIndicator>
 ) : AutoCloseable {
 
+    @Volatile
     var status = "Starting..."
+    @Volatile
     private var target = "Unknown"
     private val pool = parallelIOThreadPool()
 
     private val current = AtomicInteger()
+    @Volatile
     var goal = 0
         set(value) {
             field = value
