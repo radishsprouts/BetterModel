@@ -64,6 +64,18 @@ public interface BaseEntity extends Identifiable {
     @Nullable Component customName();
 
     /**
+     * 名前を常に表示する設定（vanilla の customNameVisible）が立っているかを返す。
+     * <p>
+     * vanilla の名札は名前を付けるだけで、この印は立てない。印が立っていない名前は、
+     * 見た時（視線と距離の条件）にだけ表示される。
+     * </p>
+     *
+     * @return 名前を常に表示する設定が立っていれば true
+     * @since 3.7.0
+     */
+    boolean customNameVisible();
+
+    /**
      * Gets vanilla entity
      * @return vanilla entity
      */
