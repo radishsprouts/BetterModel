@@ -366,6 +366,16 @@ class NMSImpl : NMS {
         }.asBukkit().wrap()
     }
 
+    override fun withBedrockSeat(itemStack: PlatformItemStack, seat: String): PlatformItemStack {
+        val tag = "${NMS.BEDROCK_SEAT_PREFIX}$seat"
+        return itemStack.unwarp().asVanilla().apply {
+            set(DataComponents.CUSTOM_MODEL_DATA, get(DataComponents.CUSTOM_MODEL_DATA)?.let {
+                // 手足の item は防具の strings を先頭に持つので、座席は末尾に置く。
+                CustomModelData(it.floats, it.flags, it.strings.filterNot { s -> s.startsWith(NMS.BEDROCK_SEAT_PREFIX) } + tag, it.colors)
+            } ?: CustomModelData(emptyList(), emptyList(), listOf(tag), emptyList()))
+        }.asBukkit().wrap()
+    }
+
     override fun createHitBox(entity: BaseEntity, bone: RenderedBone, boundingBox: ModelBoundingBox, mountController: MountController, listener: HitBoxListener): HitBox? {
         val handle = entity.handle() as? Entity ?: return null
         return HitBoxImpl(

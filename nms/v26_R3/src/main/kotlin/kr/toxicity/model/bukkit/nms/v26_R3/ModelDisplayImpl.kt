@@ -89,6 +89,8 @@ internal class ModelDisplayImpl(
 
     override fun spawn(showItem: Boolean, bundler: PacketBundler) {
         bundler += addPacket
+        // 統合版（Geyser 経由）は追加パケットの時点でメタデータが要るため、同じ束に初期データも入れる。
+        sendEntityData(showItem, bundler)
     }
 
     override fun remove(bundler: PacketBundler) {

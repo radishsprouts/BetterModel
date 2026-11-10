@@ -98,6 +98,8 @@ public final class RenderedBone implements BoneEventHandler {
     private BoneItemMapper itemMapper;
     private volatile int previousTint = INITIAL_TINT_VALUE, tint = INITIAL_TINT_VALUE;
     private volatile TransformedItemStack itemStack;
+    @Nullable
+    private volatile String bedrockSeat;
 
     //Animation
     private final BoneStateHandler globalState;
@@ -464,8 +466,27 @@ public final class RenderedBone implements BoneEventHandler {
         return false;
     }
 
+    /**
+     * 統合版用の座席の位置を設定し、item を作り直す。
+     * 乗り位置が変わった時だけ呼ばれる。
+     * @param seat {@code x;y;z} 形式の座席の位置
+     */
+    @ApiStatus.Internal
+    public void bedrockSeat(@NotNull String seat) {
+        synchronized (itemLock) {
+            if (seat.equals(bedrockSeat)) return;
+            bedrockSeat = seat;
+            tintCacheMap.clear();
+            applyItem();
+        }
+    }
+
     private void applyItem(@NotNull ModelDisplay targetDisplay) {
-        targetDisplay.item(itemStack.isAir() ? itemStack.itemStack() : tintCacheMap.computeIfAbsent(tint, i -> BetterModel.nms().tint(itemStack.itemStack(), i)));
+        var seat = bedrockSeat;
+        targetDisplay.item(itemStack.isAir() ? itemStack.itemStack() : tintCacheMap.computeIfAbsent(tint, i -> {
+            var tinted = BetterModel.nms().tint(itemStack.itemStack(), i);
+            return seat == null ? tinted : BetterModel.nms().withBedrockSeat(tinted, seat);
+        }));
     }
 
     public void teleport(@NotNull PlatformLocation location, @NotNull PacketBundler bundler) {

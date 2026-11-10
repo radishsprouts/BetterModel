@@ -30,6 +30,7 @@ import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -63,6 +64,9 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
     private static final BonePredicate HITBOX_REFRESH_PREDICATE = BonePredicate.from(r -> r.getHitBox() != null);
     private static final BonePredicate HEAD_PREDICATE = BonePredicate.tag(BoneTags.HEAD).notSet();
     private static final BonePredicate HEAD_WITH_CHILDREN_PREDICATE = BonePredicate.tag(BoneTags.HEAD_WITH_CHILDREN).withChildren();
+
+    // 統合版の座席が変わったとみなす、成分ごとの差
+    private static final float BEDROCK_SEAT_EPSILON = 1E-4F;
 
     // Registry
     private final EntityTrackerRegistry registry;
@@ -125,6 +129,21 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
         //Animation
         pipeline.defaultPosition(vec -> entity.passengerPosition(vec).mul(-1));
         pipeline.scale(scale);
+
+        //Bedrock seat: 統合版は骨が「本体の位置 + 座席」に置かれるため、乗り位置を item に載せて伝える。
+        //普段は変わらず、大きさ・子供かどうか・姿勢が変わった時だけ作り直す。
+        var seatCache = entity.passengerAttachment(new Vector3f());
+        var seatBuffer = new Vector3f();
+        pipeline.bedrockSeat(seatCache);
+        tick(_ -> {
+            entity.passengerAttachment(seatBuffer);
+            if (Math.abs(seatBuffer.x - seatCache.x) > BEDROCK_SEAT_EPSILON
+                || Math.abs(seatBuffer.y - seatCache.y) > BEDROCK_SEAT_EPSILON
+                || Math.abs(seatBuffer.z - seatCache.z) > BEDROCK_SEAT_EPSILON) {
+                seatCache.set(seatBuffer);
+                pipeline.bedrockSeat(seatCache);
+            }
+        });
         Function<Quaternionf, Quaternionf> headRotator = r -> r.mul(bodyRotator.headRotation());
 
         pipeline.addGlobalRotModifier(HEAD_PREDICATE, headRotator);

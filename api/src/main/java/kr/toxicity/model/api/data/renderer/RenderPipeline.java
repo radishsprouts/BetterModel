@@ -63,6 +63,8 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
     private final int displayAmount;
     private final Map<UUID, SpawnedPlayer> playerMap = new ConcurrentHashMap<>();
     private final Set<UUID> hidePlayerSet = ConcurrentHashMap.newKeySet();
+    // 統合版用の座席（小数 4 桁の "x;y;z"）。まだ設定されていなければ null。
+    private volatile String bedrockSeat;
 
     private final BoneEventDispatcher eventDispatcher = new BoneEventDispatcher();
     private final BoneIKSolver ikSolver;
@@ -486,6 +488,31 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
         var vec = new Vector3f();
         var supplier = FunctionUtil.throttleTick(() -> movement.apply(vec));
         forEach(b -> b.defaultPosition(supplier));
+    }
+
+    /**
+     * 統合版用の座席の位置（乗り物の乗り位置）を設定し、全骨の item を作り直す。
+     * 乗り位置が変わった時だけ呼ぶ。小数 4 桁に丸めた文字列が前回と同じなら何もしない。
+     *
+     * @param seat 向きで回す前の乗り位置
+     * @return 値が変わって item を作り直したか
+     */
+    public boolean bedrockSeat(@NotNull Vector3f seat) {
+        var text = formatSeat(seat);
+        if (text.equals(bedrockSeat)) return false;
+        bedrockSeat = text;
+        forEach(b -> b.bedrockSeat(text));
+        return true;
+    }
+
+    private static @NotNull String formatSeat(@NotNull Vector3f seat) {
+        return seatComponent(seat.x) + ';' + seatComponent(seat.y) + ';' + seatComponent(seat.z);
+    }
+
+    private static @NotNull String seatComponent(float value) {
+        var text = String.format(Locale.ROOT, "%.4f", value);
+        // 丸めて 0 になった負の値は "-0.0000" になるので、0 に揃える。
+        return text.equals("-0.0000") ? "0.0000" : text;
     }
 
     /**

@@ -39,6 +39,12 @@ import java.util.function.Consumer;
 public interface NMS {
 
     /**
+     * 統合版用の座席の位置を、item の custom_model_data の strings に載せる時の接頭辞。
+     * KadoDisplayEntity がこの接頭辞で座席を読む（書式は {@code bm:seat:<x>;<y>;<z>}）。
+     */
+    String BEDROCK_SEAT_PREFIX = "bm:seat:";
+
+    /**
      * Creates a model display at the specified location.
      *
      * @param location the starting location
@@ -140,6 +146,16 @@ public interface NMS {
      * @since 1.15.2
      */
     @NotNull PlatformItemStack tint(@NotNull PlatformItemStack itemStack, int rgb);
+
+    /**
+     * 統合版用の座席の位置を、アイテムの custom_model_data の strings の末尾に足す。
+     * 既に座席の指定があれば置き換える。Java 版の見た目は変わらない。
+     *
+     * @param itemStack 元のアイテム
+     * @param seat {@code x;y;z} 形式の座席の位置（{@code bm:seat:} の後ろに付く部分）
+     * @return 座席の指定を足したアイテム
+     */
+    @NotNull PlatformItemStack withBedrockSeat(@NotNull PlatformItemStack itemStack, @NotNull String seat);
 
     /**
      * Adds a mount packet for an entity tracker to a bundler.
