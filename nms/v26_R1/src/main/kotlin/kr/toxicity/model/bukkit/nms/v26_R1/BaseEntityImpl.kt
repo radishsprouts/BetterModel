@@ -26,10 +26,20 @@ import java.util.stream.Stream
 internal data class BaseEntityImpl(
     private val delegate: CraftEntity
 ) : BaseBukkitEntity, PersistentDataHolder by delegate {
+    // 名前は毎 tick 読まれる。元の名前（vanilla）が変わらない間は、同じ Adventure の参照を返す。
+    private class NameCache(val source: VanillaComponent, val converted: AdventureComponent)
+
+    @Volatile
+    private var nameCache: NameCache? = null
+
+    private fun cachedName(source: VanillaComponent): AdventureComponent {
+        val cache = nameCache
+        if (cache != null && (cache.source === source || cache.source == source)) return cache.converted
+        return source.asAdventure().also { nameCache = NameCache(source, it) }
+    }
+
     override fun customName(): AdventureComponent? = handle().run {
-        if (this is ServerPlayer) (customName ?: name).asAdventure() else customName?.asAdventure()?.takeIf {
-            isCustomNameVisible
-        }
+        if (this is ServerPlayer) cachedName(customName ?: name) else customName?.takeIf { isCustomNameVisible }?.let { cachedName(it) }
     }
 
     override fun entity(): org.bukkit.entity.Entity = delegate
