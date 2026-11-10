@@ -58,9 +58,16 @@ internal class ModelNametagImpl(
     private var alwaysVisible = false
     private var location = BetterModel.platform().adapter().zero()
 
+    // 最後に設定した文字（観測用に読めるよう保持する）。
+    @Volatile
+    private var current: Component? = null
+
     override fun component(component: Component?) {
+        current = component
         display.text = component?.asVanilla() ?: VanillaComponent.empty()
     }
+
+    override fun component(): Component? = current
 
     override fun teleport(location: PlatformLocation) {
         this.location = location

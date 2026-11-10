@@ -2,7 +2,7 @@
 
 - プラグイン名: BetterModel（Folia 対応フォーク radishsprouts/BetterModel の v3 系）
 - 最終更新日: 2026-11-11
-- 資料が合っているコミット: c14e5b28
+- 資料が合っているコミット: e27e0cc3
 - この資料を使っている wiki のページ: なし（2026-11-11 時点で、本番の一般サーバー・資源サーバーの `plugins\` に BetterModel は入っていない。入るまでは wiki に載せない）
 
 > wiki(角鯖の公式サイトのプレイヤー向け Wiki)を書く時に、ソースを全部読み直さずに済ませるための資料。README・仕様書ではない。プレイヤーから見える事実だけを書く。
@@ -12,6 +12,9 @@
 - Blockbench で作ったモデルを、ゲームの中の MOB・プレイヤーなどに着せて、動かす。
 - **統合版(Bedrock)のプレイヤーにも、Java 版と同じモデルが見える。** 統合版のプレイヤーは Geyser 経由で入る。BetterModel が統合版用のモデルとテクスチャを自分のフォルダへ書き出し、Geyser 側の拡張(KadoDisplayEntity)がそれを読んで統合版のクライアントに見せる。統合版のプレイヤーが自分で何かを入れる必要は無い。
 - 遠くのプレイヤーへ送る動きの量を、距離に応じて減らす(下の「数値」)。
+- **モデルを付けた MOB の名前は、モデルの上に出る。名前を後から変えると、モデルの上の名前も変わる。** 名札で付け替えた時も、他のプラグインが名前を変えた時も同じ(例: 体力を名前に出すボス)。変えた名前は次の更新(ゲームの 1 tick 以内)で、そのモデルを見ている全員に届く。名前を消すと、モデルの上の名前も消える。名前が変わっていない間は何も送り直さない。
+  - 名前が出るのは、MOB の名前の表示が有効な時だけ(名札で付けた名前は表示される)。プレイヤーに着せたモデルでは、プレイヤー名(または付けた名前)が出る。
+  - 遠くのプレイヤーにモデルの上の名前が見えるかは、モデルの骨の設定(タグ)による。
 
 ## プレイヤーの使い方
 
@@ -93,6 +96,8 @@
 - 本番サーバーに BetterModel が入っていない(2026-11-11)。入ってから、設定値を本番で確かめる。
 - 統合版のクライアントでの見え方は、まだ確かめていない。次は設計書で「推測」としたもの: 回転した立方体の面の向き(`uv_rotation`)、メッシュ(`poly_mesh`)が使えるか・向き・裏返り、発光の描き方、薄い板の裏面、手足の寸法、乗り物に乗った時の座席の高さ(符号と X・Z の向き)。
 - 「統合版で出ない見た目」の表は、設計書による。実機で確かめて直す。
+- モデルの上の名前が、名前の変更に追随する挙動は、ビルドと単体テスト(判定の部分)までしか確かめていない。ゲームの中で名札・他プラグインでの名前変更が届くことは未確認(開発サーバーの `/bmtest tag name` と `/bmtest tag show` で確かめる予定)。
+- 遠くのプレイヤーに名前が見える範囲(骨のタグごとの違い)は、wiki に書く前にソースで確かめる。
 
 ## 根拠
 
@@ -102,4 +107,6 @@
 | 統合版用の出力の書き出し(`index.json` を最後に置き換える) | `core/src/main/kotlin/kr/toxicity/model/bedrock/BedrockExporter.kt`(`write`) |
 | 光の強さと全光の扱い | `core/src/main/kotlin/kr/toxicity/model/bedrock/BedrockGeometry.kt`(`build`) |
 | 動くテクスチャのコマ数 | `core/src/main/kotlin/kr/toxicity/model/bedrock/BedrockGeometry.kt`(`BedrockTexture.of`) |
+| モデルの上の名前が名前の変更に追随する(変わった時だけ更新) | `api/src/main/java/kr/toxicity/model/api/tracker/EntityTracker.java`(`createNametag` の後の `tick`)、`api/src/main/java/kr/toxicity/model/api/tracker/NameChangeDetector.java` |
+| 名前が出る条件(MOB は名前の表示が有効な時、プレイヤーは名前) | `nms/v26_R3/src/main/kotlin/kr/toxicity/model/bukkit/nms/v26_R3/BaseEntityImpl.kt`(`customName`) |
 | `animation-lod-*` の既定値 | `core/bukkit-core/src/main/kotlin/kr/toxicity/model/bukkit/BetterModelConfigImpl.kt`(`animationLod*`) |

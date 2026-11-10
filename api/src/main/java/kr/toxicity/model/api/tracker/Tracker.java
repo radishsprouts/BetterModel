@@ -358,13 +358,76 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
      * @param handler the packet handler
      * @since 1.15.2
      */
-    public synchronized void frame(@NotNull Consumer<TrackerBundlerSet> handler) {
+    public void frame(@NotNull Consumer<TrackerBundlerSet> handler) {
+        frameHandle(handler);
+    }
+
+    /**
+     * {@link #frame(Consumer)} と同じく毎フレームのハンドラを登録し、外すための {@link Runnable} を返す。
+     * <p>
+     * 返した {@link Runnable} を呼ぶと、そのハンドラが外れる。何度呼んでも安全で、2回目以降は何もしない。
+     * </p>
+     * <pre>{@code
+     * var remove = tracker.frameHandle(set -> {});
+     * remove.run();
+     * }</pre>
+     *
+     * @param handler 登録するハンドラ
+     * @return ハンドラを外す {@link Runnable}
+     * @since 3.7.0
+     */
+    public synchronized @NotNull Runnable frameHandle(@NotNull Consumer<TrackerBundlerSet> handler) {
         Objects.requireNonNull(handler);
         var get = tickHandlers;
         var newList = new ObjectArrayList<Consumer<TrackerBundlerSet>>(get.size() + 1);
         newList.addAll(get);
         newList.add(handler);
         tickHandlers = newList;
+        return () -> removeHandler(handler);
+    }
+
+    private synchronized void removeHandler(@NotNull Consumer<TrackerBundlerSet> handler) {
+        var get = tickHandlers;
+        var index = -1;
+        for (int i = 0; i < get.size(); i++) {
+            if (get.get(i) == handler) {
+                index = i;
+                break;
+            }
+        }
+        if (index < 0) return;
+        var newList = new ObjectArrayList<Consumer<TrackerBundlerSet>>(get.size() - 1);
+        for (int i = 0; i < get.size(); i++) {
+            if (i != index) newList.add(get.get(i));
+        }
+        tickHandlers = newList;
+    }
+
+    /**
+     * 登録済みのハンドラの数を返す（観測用）。
+     *
+     * @return {@link #frame(Consumer)}・{@link #tick(Consumer)}・{@link #schedule(long, Consumer)} で登録され、外されていないハンドラの数
+     * @since 3.7.0
+     */
+    public int handlerCount() {
+        return tickHandlers.size();
+    }
+
+    /**
+     * 視聴者ごとの今の LOD の段と、最後に送った版を、コピーして返す（観測用。状態は変えない）。
+     * <p>
+     * 別のスレッドから呼んでよい。視聴者が 0 人でトラッカーが止まっている間は、視聴者の一覧は空になる。
+     * </p>
+     * <pre>{@code
+     * var snapshot = tracker.syncSnapshot();
+     * snapshot.viewers().forEach(v -> System.out.println(v.uuid() + " step=" + v.step()));
+     * }</pre>
+     *
+     * @return 不変の写し
+     * @since 3.7.0
+     */
+    public @NotNull TrackerSyncSnapshot syncSnapshot() {
+        return animationTicker.snapshot();
     }
     /**
      * Registers a handler to run every Minecraft tick (50ms).
@@ -387,6 +450,36 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
     }
 
     /**
+     * {@link #tick(Consumer)} と同じく Minecraft の tick ごとのハンドラを登録し、外すための {@link Runnable} を返す。
+     * <p>
+     * 返した {@link Runnable} を呼ぶと、そのハンドラが外れる。何度呼んでも安全。
+     * </p>
+     * <pre>{@code
+     * var remove = tracker.tickHandle(set -> {});
+     * remove.run();
+     * }</pre>
+     *
+     * @param handler 登録するハンドラ
+     * @return ハンドラを外す {@link Runnable}
+     * @since 3.7.0
+     */
+    public @NotNull Runnable tickHandle(@NotNull Consumer<TrackerBundlerSet> handler) {
+        return tickHandle(1, handler);
+    }
+
+    /**
+     * {@link #tick(long, Consumer)} と同じく N Minecraft tick ごとのハンドラを登録し、外すための {@link Runnable} を返す。
+     *
+     * @param tick Minecraft の tick の間隔
+     * @param handler 登録するハンドラ
+     * @return ハンドラを外す {@link Runnable}
+     * @since 3.7.0
+     */
+    public @NotNull Runnable tickHandle(long tick, @NotNull Consumer<TrackerBundlerSet> handler) {
+        return scheduleHandle(MINECRAFT_TICK_MULTIPLIER * tick, handler);
+    }
+
+    /**
      * Registers a handler to run every tick for each visible player.
      *
      * @param perPlayerHandler the per-player handler
@@ -405,9 +498,21 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
      * @since 1.15.2
      */
     public void schedule(long period, @NotNull Consumer<TrackerBundlerSet> handler) {
+        scheduleHandle(period, handler);
+    }
+
+    /**
+     * {@link #schedule(long, Consumer)} と同じく周期ハンドラを登録し、外すための {@link Runnable} を返す。
+     *
+     * @param period tracker tick での周期
+     * @param handler 登録するハンドラ
+     * @return ハンドラを外す {@link Runnable}。何度呼んでも安全
+     * @since 3.7.0
+     */
+    public @NotNull Runnable scheduleHandle(long period, @NotNull Consumer<TrackerBundlerSet> handler) {
         Objects.requireNonNull(handler);
         if (period <= 0) throw new RuntimeException("period cannot be <= 0");
-        frame(period == 1 ? handler : set -> {
+        return frameHandle(period == 1 ? handler : set -> {
             if (frame % period == 0) handler.accept(set);
         });
     }

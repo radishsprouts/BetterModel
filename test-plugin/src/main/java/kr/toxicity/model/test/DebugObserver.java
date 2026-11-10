@@ -13,22 +13,25 @@ import kr.toxicity.model.api.bone.RenderedBone;
 import kr.toxicity.model.api.platform.PlatformLocation;
 import kr.toxicity.model.api.tracker.EntityTracker;
 import kr.toxicity.model.api.tracker.Tracker;
+import kr.toxicity.model.api.tracker.TrackerSyncSnapshot;
 import org.bukkit.entity.Entity;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.stream.Collectors;
 
 /**
  * トラッカーの状態を読む入口（V3 距離による LOD、V4 視界外の間の回転の確認用）。
  * <p>
- * 公開 API だけを使う。トラッカーが内部で持つ「視聴者ごとの LOD の段」「最後に送った版」は
- * 公開されていないため読めない。代わりに、設定値と同じ式で期待される段を計算して並べる。
+ * 公開 API だけを使う。視聴者ごとの実際の LOD の段と最後に送った版は {@link Tracker#syncSnapshot()} で読み、
+ * 設定値と同じ式で計算した期待値と並べて出す。
  * </p>
  */
 final class DebugObserver {
@@ -71,7 +74,7 @@ final class DebugObserver {
      */
     void lod(@NotNull DebugReport out, @NotNull EntityTracker tracker) {
         out.line(lodConfig());
-        out.line("注意: 期待値は設定値からテスト側で計算した値。トラッカー内部の実際の段・最後に送った版は公開 API に無く読めない");
+        out.line("実際の段・送った版はトラッカーから読んだ値。期待値は設定値からテスト側で計算した値（段は 1 MC tick ごとに更新されるため、境界では一時的にずれる）");
         viewers(out, tracker);
     }
 
@@ -107,8 +110,8 @@ final class DebugObserver {
         watch.active = true;
         if (created) {
             var target = watch;
-            // 観測はトラッカー自身の tick（シャードのスレッド）の上で行う。
-            tracker.tick(_ -> sample(target, tracker));
+            // 観測はトラッカー自身の tick（シャードのスレッド）の上で行う。外すための戻り値を持っておく。
+            watch.remove = tracker.tickHandle(_ -> sample(target, tracker));
         }
         out.line("watch 開始: 間隔=" + period + "tick 回数=" + count + " tick稼働中=" + tracker.isScheduled()
             + " 視聴者数=" + tracker.playerCount() + "（視聴者が 0 の間はトラッカーが止まり出力されない）");
@@ -126,8 +129,19 @@ final class DebugObserver {
             out.line("watch は動いていない");
             return;
         }
+        var before = tracker.handlerCount();
+        finish(tracker, watch);
+        out.line("watch を止めた（残り " + watch.remaining + " 回）。ハンドラを外した: 登録数 " + before + " -> " + tracker.handlerCount());
+    }
+
+    /**
+     * 観測を終え、トラッカーに登録したハンドラを外す。
+     */
+    private void finish(@NotNull Tracker tracker, @NotNull Watch watch) {
         watch.active = false;
-        out.line("watch を止めた（残り " + watch.remaining + " 回）");
+        var remove = watch.remove;
+        if (remove != null) remove.run();
+        watches.remove(tracker);
     }
 
     private void sample(@NotNull Watch watch, @NotNull EntityTracker tracker) {
@@ -147,11 +161,11 @@ final class DebugObserver {
             for (RenderedBone bone : pickBones(tracker, watch.boneNames)) out.line("  " + bone(bone));
             viewers(out, tracker);
             if (--watch.remaining <= 0) {
-                watch.active = false;
-                out.line("watch 終了");
+                finish(tracker, watch);
+                out.line("watch 終了（ハンドラを外した。登録数 " + tracker.handlerCount() + "）");
             }
         } catch (Throwable throwable) {
-            watch.active = false;
+            finish(tracker, watch);
             out.error("watch の観測中に", throwable);
         }
     }
@@ -210,14 +224,23 @@ final class DebugObserver {
     private static void viewers(@NotNull DebugReport out, @NotNull EntityTracker tracker) {
         var config = BetterModel.config();
         var location = tracker.location();
+        var snapshot = tracker.syncSnapshot();
+        var actual = new HashMap<UUID, TrackerSyncSnapshot.ViewerSync>();
+        snapshot.viewers().forEach(sync -> actual.put(sync.uuid(), sync));
+        out.line("送信状態: 姿勢の版=" + snapshot.version() + " 送信処理の回数=" + snapshot.tickStamp() + " 登録ハンドラ数=" + tracker.handlerCount());
         var lines = new ArrayList<String>();
         tracker.registry().viewedPlayer().forEach(channel -> {
             var player = channel.player();
             if (!tracker.isSpawned(channel.uuid())) return;
             var playerLocation = player.location();
+            var expected = expectedStep(config, playerLocation, location);
+            var sync = actual.get(channel.uuid());
             lines.add("視聴者 " + player.name()
                 + " 距離=" + f(distance(playerLocation, location))
-                + " 期待LOD段=" + expectedStep(config, playerLocation, location));
+                + " 実際のLOD段=" + (sync == null ? "未計測(個別アニメーション中か、次の tick 待ち)" : String.valueOf(sync.step()))
+                + " 期待LOD段=" + expected
+                + (sync != null && sync.step() != expected ? "(差あり)" : "")
+                + " 最後に送った版=" + (sync == null ? "-" : sync.sentVersion() + "/" + snapshot.version()));
         });
         if (lines.isEmpty()) out.line("視聴者: なし");
         else lines.forEach(out::line);
@@ -269,6 +292,8 @@ final class DebugObserver {
         private volatile int remaining;
         private volatile List<String> boneNames = List.of();
         private volatile long startMillis;
+        // トラッカーに登録したハンドラを外すための戻り値。
+        private volatile Runnable remove;
         // トラッカーのシャードのスレッドだけが触る。
         private int ticks;
     }

@@ -20,6 +20,7 @@ import kr.toxicity.model.api.event.DismountModelEvent;
 import kr.toxicity.model.api.event.MountModelEvent;
 import kr.toxicity.model.api.nms.HitBox;
 import kr.toxicity.model.api.nms.HitBoxListener;
+import kr.toxicity.model.api.nms.ModelNametag;
 import kr.toxicity.model.api.platform.PlatformLocation;
 import kr.toxicity.model.api.platform.PlatformPlayer;
 import kr.toxicity.model.api.util.EventUtil;
@@ -37,6 +38,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -149,13 +151,26 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
         pipeline.addGlobalRotModifier(HEAD_PREDICATE, headRotator);
         pipeline.addGlobalRotModifier(HEAD_WITH_CHILDREN_PREDICATE, headRotator);
 
+        //Nametag: 自動で作ったネームタグだけが名前に追随する（API で別に作ったネームタグには触れない）。
+        var autoNametags = new CopyOnWriteArrayList<ModelNametag>();
+        var nameDetector = new NameChangeDetector(null);
         createNametag(CREATE_NAMETAG_PREDICATE, (bone, tag) -> {
             if (bone.name().tagged(BoneTags.PLAYER_TAG)) {
                 tag.alwaysVisible(true);
             } else if (bone.name().tagged(BoneTags.MOB_TAG)) {
                 tag.alwaysVisible(false);
             } else tag.alwaysVisible(entity instanceof BasePlayer);
-            tag.component(entity.customName());
+            // 最初の1本目の作成時にだけ名前を読み、同じ作成の中の他の骨は同じ値を使う。
+            if (autoNametags.isEmpty()) nameDetector.changed(entity.customName());
+            tag.component(nameDetector.last());
+            autoNametags.add(tag);
+        });
+        //名前の変更への追随: 普段は参照の比較だけで済み、変わった時だけネームタグを書き換える。
+        //書き換えは次のネームタグの更新（tick ごとの update）で、見ている全員へ届く。
+        if (!autoNametags.isEmpty()) tick(_ -> {
+            var name = entity.customName();
+            if (!nameDetector.changed(name)) return;
+            for (var tag : autoNametags) tag.component(name);
         });
         listenHitBox((b, l) -> l
             .create(h -> registry.hitBoxCache.put(h.uuid(), h))
