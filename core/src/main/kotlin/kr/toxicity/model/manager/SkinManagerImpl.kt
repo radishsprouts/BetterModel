@@ -35,544 +35,13 @@ import javax.imageio.ImageIO
 
 object SkinManagerImpl : SkinManager, GlobalManager {
 
-    private const val DIV_FACTOR = 16F / 0.9375F
-
+    @Volatile
     private var uvNamespace = UVNamespace(
         CONFIG.namespace(),
         "player_limb"
     )
 
-    private val HEAD = UVModel(
-        { uvNamespace },
-        "head"
-    ).addElement(
-        UVElement(
-            ElementVector(8F, 8F, 8F).div(DIV_FACTOR),
-            ElementVector(0f, 4F, 0f).div(DIV_FACTOR),
-            UVSpace(8, 8, 8),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(8, 8),
-                UVFace.SOUTH to UVPos(24, 8),
-                UVFace.EAST to UVPos(0, 8),
-                UVFace.WEST to UVPos(16, 8),
-                UVFace.UP to UVPos(8, 0),
-                UVFace.DOWN to UVPos(16, 0)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(8F, 8F, 8F).div(DIV_FACTOR).inflate(0.5f),
-            ElementVector(0f, 4F, 0f).div(DIV_FACTOR),
-            UVSpace(8, 8, 8),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(8 + 32, 8),
-                UVFace.SOUTH to UVPos(24 + 32, 8),
-                UVFace.EAST to UVPos(32, 8),
-                UVFace.WEST to UVPos(16 + 32, 8),
-                UVFace.UP to UVPos(8 + 32, 0),
-                UVFace.DOWN to UVPos(16 + 32, 0)
-            )
-        )
-    )
-    private val CHEST = UVModel(
-        { uvNamespace },
-        "chest"
-    ).addElement(
-        UVElement(
-            ElementVector(8f, 4f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, 2f, 0f).div(DIV_FACTOR),
-            UVSpace(8, 4, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(20, 20),
-                UVFace.SOUTH to UVPos(32, 20),
-                UVFace.EAST to UVPos(16, 20),
-                UVFace.WEST to UVPos(28, 20),
-                UVFace.UP to UVPos(20, 16)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(8f, 4f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, 2f, 0f).div(DIV_FACTOR),
-            UVSpace(8, 4, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(20, 20 + 16),
-                UVFace.SOUTH to UVPos(32, 20 + 16),
-                UVFace.EAST to UVPos(16, 20 + 16),
-                UVFace.WEST to UVPos(28, 20 + 16),
-                UVFace.UP to UVPos(20, 16 + 16)
-            )
-        )
-    )
-    private val WAIST = UVModel(
-        { uvNamespace },
-        "waist"
-    ).addElement(
-        UVElement(
-            ElementVector(8f, 4f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, 2f, 0f).div(DIV_FACTOR),
-            UVSpace(8, 4, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(20, 24),
-                UVFace.SOUTH to UVPos(32, 24),
-                UVFace.EAST to UVPos(16, 24),
-                UVFace.WEST to UVPos(28, 24)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(8f, 4f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, 2f, 0f).div(DIV_FACTOR),
-            UVSpace(8, 4, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(20, 24 + 16),
-                UVFace.SOUTH to UVPos(32, 24 + 16),
-                UVFace.EAST to UVPos(16, 24 + 16),
-                UVFace.WEST to UVPos(28, 24 + 16)
-            )
-        )
-    )
-    private val HIP = UVModel(
-        { uvNamespace },
-        "hip"
-    ).addElement(
-        UVElement(
-            ElementVector(8f, 4f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, 2f, 0f).div(DIV_FACTOR),
-            UVSpace(8, 4, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(20, 28),
-                UVFace.SOUTH to UVPos(32, 28),
-                UVFace.EAST to UVPos(16, 28),
-                UVFace.WEST to UVPos(28, 28),
-                UVFace.DOWN to UVPos(28, 16)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(8f, 4f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, 2f, 0f).div(DIV_FACTOR),
-            UVSpace(8, 4, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(20, 28 + 16),
-                UVFace.SOUTH to UVPos(32, 28 + 16),
-                UVFace.EAST to UVPos(16, 28 + 16),
-                UVFace.WEST to UVPos(28, 28 + 16),
-                UVFace.DOWN to UVPos(28, 16 + 16)
-            )
-        )
-    )
-    private val LEFT_LEG = UVModel(
-        { uvNamespace },
-        "left_leg"
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(20, 52),
-                UVFace.SOUTH to UVPos(28, 52),
-                UVFace.EAST to UVPos(16, 52),
-                UVFace.WEST to UVPos(24, 52),
-                UVFace.UP to UVPos(20, 48)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(20 - 16, 52),
-                UVFace.SOUTH to UVPos(28 - 16, 52),
-                UVFace.EAST to UVPos(0, 52),
-                UVFace.WEST to UVPos(24 - 16, 52),
-                UVFace.UP to UVPos(20 - 16, 48)
-            )
-        )
-    )
-    private val LEFT_FORELEG = UVModel(
-        { uvNamespace },
-        "left_foreleg"
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(20, 58),
-                UVFace.SOUTH to UVPos(28, 58),
-                UVFace.EAST to UVPos(16, 58),
-                UVFace.WEST to UVPos(24, 58),
-                UVFace.DOWN to UVPos(24, 48)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(20 - 16, 58),
-                UVFace.SOUTH to UVPos(28 - 16, 58),
-                UVFace.EAST to UVPos(0, 58),
-                UVFace.WEST to UVPos(24 - 16, 58),
-                UVFace.DOWN to UVPos(24 - 16, 48)
-            )
-        )
-    )
-    private val RIGHT_LEG = UVModel(
-        { uvNamespace },
-        "right_leg"
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(4, 20),
-                UVFace.SOUTH to UVPos(12, 20),
-                UVFace.EAST to UVPos(0, 20),
-                UVFace.WEST to UVPos(8, 20),
-                UVFace.UP to UVPos(4, 16)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(4, 20 + 16),
-                UVFace.SOUTH to UVPos(12, 20 + 16),
-                UVFace.EAST to UVPos(0, 20 + 16),
-                UVFace.WEST to UVPos(8, 20 + 16),
-                UVFace.UP to UVPos(4, 16 + 16)
-            )
-        )
-    )
-    private val RIGHT_FORELEG = UVModel(
-        { uvNamespace },
-        "right_foreleg"
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(4, 26),
-                UVFace.SOUTH to UVPos(12, 26),
-                UVFace.EAST to UVPos(0, 26),
-                UVFace.WEST to UVPos(8, 26),
-                UVFace.DOWN to UVPos(8, 16)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(4, 26 + 16),
-                UVFace.SOUTH to UVPos(12, 26 + 16),
-                UVFace.EAST to UVPos(0, 26 + 16),
-                UVFace.WEST to UVPos(8, 26 + 16),
-                UVFace.DOWN to UVPos(8, 16 + 16)
-            )
-        )
-    )
-    private val LEFT_ARM = UVModel(
-        { uvNamespace },
-        "left_arm"
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(36, 52),
-                UVFace.SOUTH to UVPos(44, 52),
-                UVFace.EAST to UVPos(32, 52),
-                UVFace.WEST to UVPos(40, 52),
-                UVFace.UP to UVPos(36, 48)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(36 + 16, 52),
-                UVFace.SOUTH to UVPos(44 + 16, 52),
-                UVFace.EAST to UVPos(32 + 16, 52),
-                UVFace.WEST to UVPos(40 + 16, 52),
-                UVFace.UP to UVPos(36 + 16, 48)
-            )
-        )
-    )
-    private val LEFT_FOREARM = UVModel(
-        { uvNamespace },
-        "left_forearm"
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(36, 58),
-                UVFace.SOUTH to UVPos(44, 58),
-                UVFace.EAST to UVPos(32, 58),
-                UVFace.WEST to UVPos(40, 58),
-                UVFace.DOWN to UVPos(40, 48)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(36 + 16, 58),
-                UVFace.SOUTH to UVPos(44 + 16, 58),
-                UVFace.EAST to UVPos(32 + 16, 58),
-                UVFace.WEST to UVPos(40 + 16, 58),
-                UVFace.DOWN to UVPos(40 + 16, 48)
-            )
-        )
-    )
-    private val RIGHT_ARM = UVModel(
-        { uvNamespace },
-        "right_arm"
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(44, 20),
-                UVFace.SOUTH to UVPos(52, 20),
-                UVFace.EAST to UVPos(40, 20),
-                UVFace.WEST to UVPos(48, 20),
-                UVFace.UP to UVPos(44, 16)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(44, 20 + 16),
-                UVFace.SOUTH to UVPos(52, 20 + 16),
-                UVFace.EAST to UVPos(40, 20 + 16),
-                UVFace.WEST to UVPos(48, 20 + 16),
-                UVFace.UP to UVPos(44, 16 + 16)
-            )
-        )
-    )
-    private val RIGHT_FOREARM = UVModel(
-        { uvNamespace },
-        "right_forearm"
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(44, 26),
-                UVFace.SOUTH to UVPos(52, 26),
-                UVFace.EAST to UVPos(40, 26),
-                UVFace.WEST to UVPos(48, 26),
-                UVFace.DOWN to UVPos(48, 16)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(4f, 6f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(4, 6, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(44, 26 + 16),
-                UVFace.SOUTH to UVPos(52, 26 + 16),
-                UVFace.EAST to UVPos(40, 26 + 16),
-                UVFace.WEST to UVPos(48, 26 + 16),
-                UVFace.DOWN to UVPos(48, 16 + 16)
-            )
-        )
-    )
-    private val SLIM_LEFT_ARM = UVModel(
-        { uvNamespace },
-        "left_slim_arm"
-    ).addElement(
-        UVElement(
-            ElementVector(3f, 6f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(3, 6, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(36, 52),
-                UVFace.SOUTH to UVPos(43, 52),
-                UVFace.EAST to UVPos(32, 52),
-                UVFace.WEST to UVPos(39, 52),
-                UVFace.UP to UVPos(36, 48)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(3f, 6f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(3, 6, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(36 + 16, 52),
-                UVFace.SOUTH to UVPos(43 + 16, 52),
-                UVFace.EAST to UVPos(32 + 16, 52),
-                UVFace.WEST to UVPos(39 + 16, 52),
-                UVFace.UP to UVPos(36 + 16, 48)
-            )
-        )
-    )
-    private val SLIM_LEFT_FOREARM = UVModel(
-        { uvNamespace },
-        "left_slim_forearm"
-    ).addElement(
-        UVElement(
-            ElementVector(3f, 6f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(3, 6, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(36, 58),
-                UVFace.SOUTH to UVPos(43, 58),
-                UVFace.EAST to UVPos(32, 58),
-                UVFace.WEST to UVPos(39, 58),
-                UVFace.DOWN to UVPos(39, 48)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(3f, 6f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(3, 6, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(36 + 16, 58),
-                UVFace.SOUTH to UVPos(43 + 16, 58),
-                UVFace.EAST to UVPos(32 + 16, 58),
-                UVFace.WEST to UVPos(39 + 16, 58),
-                UVFace.DOWN to UVPos(39 + 16, 48)
-            )
-        )
-    )
-    private val SLIM_RIGHT_ARM = UVModel(
-        { uvNamespace },
-        "right_slim_arm"
-    ).addElement(
-        UVElement(
-            ElementVector(3f, 6f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(3, 6, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(44, 20),
-                UVFace.SOUTH to UVPos(51, 20),
-                UVFace.EAST to UVPos(40, 20),
-                UVFace.WEST to UVPos(47, 20),
-                UVFace.UP to UVPos(44, 16)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(3f, 6f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(3, 6, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(44, 20 + 16),
-                UVFace.SOUTH to UVPos(51, 20 + 16),
-                UVFace.EAST to UVPos(40, 20 + 16),
-                UVFace.WEST to UVPos(47, 20 + 16),
-                UVFace.UP to UVPos(44, 16 + 16)
-            )
-        )
-    )
-    private val SLIM_RIGHT_FOREARM = UVModel(
-        { uvNamespace },
-        "right_slim_forearm"
-    ).addElement(
-        UVElement(
-            ElementVector(3f, 6f, 4f).div(DIV_FACTOR),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(3, 6, 4),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(44, 26),
-                UVFace.SOUTH to UVPos(51, 26),
-                UVFace.EAST to UVPos(40, 26),
-                UVFace.WEST to UVPos(47, 26),
-                UVFace.DOWN to UVPos(47, 16)
-            )
-        )
-    ).addElement(
-        UVElement(
-            ElementVector(3f, 6f, 4f).div(DIV_FACTOR).inflate(0.25f),
-            ElementVector(0f, -3f, 0f).div(DIV_FACTOR),
-            UVSpace(3, 6, 4),
-            UVElement.ColorType.COMPLEX_ARGB,
-            mapOf(
-                UVFace.NORTH to UVPos(44, 26 + 16),
-                UVFace.SOUTH to UVPos(51, 26 + 16),
-                UVFace.EAST to UVPos(40, 26 + 16),
-                UVFace.WEST to UVPos(47, 26 + 16),
-                UVFace.DOWN to UVPos(47, 16 + 16)
-            )
-        )
-    )
-    private val CAPE = UVModel(
-        { uvNamespace },
-        "cape"
-    ).addElement(
-        UVElement(
-            ElementVector(10f, 16f, 1f).div(DIV_FACTOR),
-            ElementVector(0f, -8f, 0.5f).div(DIV_FACTOR),
-            UVSpace(10, 16, 1),
-            UVElement.ColorType.RGB,
-            mapOf(
-                UVFace.NORTH to UVPos(12, 1),
-                UVFace.SOUTH to UVPos(1, 1),
-                UVFace.EAST to UVPos(11, 1),
-                UVFace.WEST to UVPos(0, 1),
-                UVFace.UP to UVPos(1, 0),
-                UVFace.DOWN to UVPos(11, 0)
-            )
-        )
-    )
+    private val limbs = PlayerLimbModels { uvNamespace }
 
     private data class SkinModelData(
         private val model: UVModel,
@@ -649,23 +118,23 @@ object SkinManagerImpl : SkinManager, GlobalManager {
                     }
             })
         }
-        set += HEAD.parseAsJson(ArmorResource.HELMET)
-        set += CHEST.parseAsJson(ArmorResource.CHEST)
-        set += WAIST.parseAsJson(ArmorResource.WAIST)
-        set += HIP.parseAsJson(ArmorResource.HIP)
-        set += LEFT_LEG.parseAsJson(ArmorResource.LEFT_LEG)
-        set += LEFT_FORELEG.parseAsJson(ArmorResource.LEFT_FORELEG)
-        set += RIGHT_LEG.parseAsJson(ArmorResource.RIGHT_LEG)
-        set += RIGHT_FORELEG.parseAsJson(ArmorResource.RIGHT_FORELEG)
-        set += LEFT_ARM.parseAsJson(ArmorResource.LEFT_ARM)
-        set += LEFT_FOREARM.parseAsJson()
-        set += RIGHT_ARM.parseAsJson(ArmorResource.RIGHT_ARM)
-        set += RIGHT_FOREARM.parseAsJson()
-        set += SLIM_LEFT_ARM.parseAsJson(ArmorResource.LEFT_ARM)
-        set += SLIM_LEFT_FOREARM.parseAsJson()
-        set += SLIM_RIGHT_ARM.parseAsJson(ArmorResource.RIGHT_ARM)
-        set += SLIM_RIGHT_FOREARM.parseAsJson()
-        set += CAPE.parseAsJson()
+        set += limbs.head.parseAsJson(ArmorResource.HELMET)
+        set += limbs.chest.parseAsJson(ArmorResource.CHEST)
+        set += limbs.waist.parseAsJson(ArmorResource.WAIST)
+        set += limbs.hip.parseAsJson(ArmorResource.HIP)
+        set += limbs.leftLeg.parseAsJson(ArmorResource.LEFT_LEG)
+        set += limbs.leftForeLeg.parseAsJson(ArmorResource.LEFT_FORELEG)
+        set += limbs.rightLeg.parseAsJson(ArmorResource.RIGHT_LEG)
+        set += limbs.rightForeLeg.parseAsJson(ArmorResource.RIGHT_FORELEG)
+        set += limbs.leftArm.parseAsJson(ArmorResource.LEFT_ARM)
+        set += limbs.leftForeArm.parseAsJson()
+        set += limbs.rightArm.parseAsJson(ArmorResource.RIGHT_ARM)
+        set += limbs.rightForeArm.parseAsJson()
+        set += limbs.slimLeftArm.parseAsJson(ArmorResource.LEFT_ARM)
+        set += limbs.slimLeftForeArm.parseAsJson()
+        set += limbs.slimRightArm.parseAsJson(ArmorResource.RIGHT_ARM)
+        set += limbs.slimRightForeArm.parseAsJson()
+        set += limbs.cape.parseAsJson()
 
         set += textureName.normalPixel(uvNamespace)
         set += textureName.translucentPixel(uvNamespace)
@@ -680,7 +149,7 @@ object SkinManagerImpl : SkinManager, GlobalManager {
                 handleExpiration(key, value)
             }
         }
-        .build<UUID, SkinDataImpl>()
+        .buildAsync<UUID, SkinDataImpl>()
 
     private val fallback by lazy {
         PLATFORM.getResource("fallback_skin.png")!!.use {
@@ -690,7 +159,7 @@ object SkinManagerImpl : SkinManager, GlobalManager {
 
     private fun handleExpiration(key: UUID, skin: SkinDataImpl) {
         skin.profile().let {
-            if (!callEvent { RemovePlayerSkinEvent(it) } || it.playerEquals()) profileCache.put(key, skin)
+            if (!callEvent { RemovePlayerSkinEvent(it) } || it.playerEquals()) profileCache.put(key, CompletableFuture.completedFuture(skin))
         }
     }
 
@@ -702,13 +171,25 @@ object SkinManagerImpl : SkinManager, GlobalManager {
 
     override fun complete(profile: ModelProfile.Uncompleted): CompletableFuture<out SkinData> {
         if (profile.info() == ModelProfileInfo.UNKNOWN) return CompletableFuture.completedFuture(fallback)
-        return profileCache.getIfPresent(profile.info().id)?.let { CompletableFuture.completedFuture(it) } ?: profile.complete().thenApply { provided ->
+        // Concurrent requests share one future. A failed (or null) future is evicted by the cache itself.
+        return profileCache.get(profile.info().id) { _, _ -> load(profile) }
+            .handle<SkinData> { skin, _ -> skin ?: fallback }
+    }
+
+    /**
+     * Loads the skin of this profile.
+     * The returned future fails if the skin can't be read, and completes with null if the profile has no skin;
+     * in both cases the cache doesn't keep it, and [complete] falls back to the default skin.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun load(profile: ModelProfile.Uncompleted): CompletableFuture<SkinDataImpl> {
+        return profile.complete().thenApply { provided ->
             CreatePlayerSkinEvent(provided).run {
                 call()
                 modelProfile
             }
         }.thenComposeAsync compose@ { selected ->
-            val skin = selected.skin().skin ?: return@compose CompletableFuture.completedFuture(fallback)
+            val skin = selected.skin().skin ?: return@compose CompletableFuture.completedFuture<SkinDataImpl?>(null)
             val cape = selected.skin().cape
             httpClient {
                 fun URI.toFuture() = sendAsync(
@@ -717,30 +198,28 @@ object SkinManagerImpl : SkinManager, GlobalManager {
                         GET()
                     },
                     HttpResponse.BodyHandlers.ofInputStream()
-                ).thenComposeAsync { request ->
-                    CompletableFuture.supplyAsync { request.body().use { ImageIO.read(it) } }
+                ).thenApplyAsync { response ->
+                    response.body().use { body ->
+                        check(response.statusCode() == 200) { "Unexpected status code ${response.statusCode()}: ${this@toFuture}" }
+                        checkNotNull(ImageIO.read(body)) { "Unable to decode an image: ${this@toFuture}" }
+                    }
                 }
                 skin.toFuture().thenCombine(cape?.toFuture() ?: CompletableFuture.completedFuture(null)) { skin, cape ->
                     SkinDataImpl(
                         selected,
                         skin.convertLegacy(),
                         cape
-                    ).apply {
-                        profileCache.put(profile.info().id, this)
-                    }
+                    )
                 }
             }.orElse {
-                it.handleException("Unable to read this skin: ${selected.info().name}")
-                CompletableFuture.completedFuture(fallback)
+                CompletableFuture.failedFuture(it)
             }
-        }.exceptionally {
-            it.handleException("unable to read this skin: ${profile.info().name}")
-            profileCache.invalidate(profile.info().id)
-            null
-        }
+        }.whenComplete { _, error ->
+            error?.handleException("Unable to read this skin: ${profile.info().name}")
+        } as CompletableFuture<SkinDataImpl>
     }
 
-    override fun removeCache(profile: ModelProfile) = profileCache.invalidate(profile.info().id)
+    override fun removeCache(profile: ModelProfile) = profileCache.synchronous().invalidate(profile.info().id)
 
     private fun BufferedImage.convertLegacy() = if (height == 64) this else BufferedImage(64, 64, BufferedImage.TYPE_INT_ARGB).also { newImage ->
         fun drawTo(from: UVPos, to: UVPos, xr: IntRange, zr: IntRange) {
@@ -792,19 +271,19 @@ object SkinManagerImpl : SkinManager, GlobalManager {
             capeImage: BufferedImage?
         ) : this(
             profile,
-            HEAD.asModelData(skinImage),
-            HIP.asModelData(skinImage),
-            WAIST.asModelData(skinImage),
-            CHEST.asModelData(skinImage),
-            (if (profile.skin().slim) SLIM_LEFT_ARM else LEFT_ARM).asModelData(skinImage),
-            (if (profile.skin().slim) SLIM_RIGHT_ARM else RIGHT_ARM).asModelData(skinImage) ,
-            LEFT_LEG.asModelData(skinImage),
-            LEFT_FORELEG.asModelData(skinImage),
-            RIGHT_LEG.asModelData(skinImage),
-            RIGHT_FORELEG.asModelData(skinImage),
-            (if (profile.skin().slim) SLIM_LEFT_FOREARM else LEFT_FOREARM).asModelData(skinImage).asItem(),
-            (if (profile.skin().slim) SLIM_RIGHT_FOREARM else RIGHT_FOREARM).asModelData(skinImage).asItem(),
-            capeImage?.let { CAPE.asModelData(it).asItem() }
+            limbs.head.asModelData(skinImage),
+            limbs.hip.asModelData(skinImage),
+            limbs.waist.asModelData(skinImage),
+            limbs.chest.asModelData(skinImage),
+            (if (profile.skin().slim) limbs.slimLeftArm else limbs.leftArm).asModelData(skinImage),
+            (if (profile.skin().slim) limbs.slimRightArm else limbs.rightArm).asModelData(skinImage),
+            limbs.leftLeg.asModelData(skinImage),
+            limbs.leftForeLeg.asModelData(skinImage),
+            limbs.rightLeg.asModelData(skinImage),
+            limbs.rightForeLeg.asModelData(skinImage),
+            (if (profile.skin().slim) limbs.slimLeftForeArm else limbs.leftForeArm).asModelData(skinImage).asItem(),
+            (if (profile.skin().slim) limbs.slimRightForeArm else limbs.rightForeArm).asModelData(skinImage).asItem(),
+            capeImage?.let { limbs.cape.asModelData(it).asItem() }
         )
         override fun profile(): ModelProfile = profile
         override fun head(armor: PlayerArmor): TransformedItemStack = head.asItem(ArmorResource.HELMET, armor.helmet())
@@ -846,12 +325,12 @@ object SkinManagerImpl : SkinManager, GlobalManager {
                 resource.build()
             }
         }
-        profileCache.asMap().entries.forEach {
-            it.value.refresh()
+        profileCache.synchronous().asMap().values.forEach {
+            it.refresh()
         }
     }
 
     override fun end() {
-        profileCache.cleanUp()
+        profileCache.synchronous().cleanUp()
     }
 }

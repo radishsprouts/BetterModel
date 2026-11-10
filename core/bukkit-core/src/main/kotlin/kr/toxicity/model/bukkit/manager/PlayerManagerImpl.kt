@@ -49,10 +49,15 @@ object PlayerManagerImpl : PlayerManager, GlobalManager {
         })
     }
 
-    private fun PlatformPlayer.register() = playerMap.computeIfAbsent(uuid()) {
-        PLATFORM.nms().inject(this)
-    }.apply {
-        SkinManagerImpl.complete(base().profile().asUncompleted())
+    private fun PlatformPlayer.register(): PlayerChannelHandler {
+        var created = false
+        val handler = playerMap.computeIfAbsent(uuid()) {
+            created = true
+            PLATFORM.nms().inject(this)
+        }
+        //The skin is requested only once per registration.
+        if (created) SkinManagerImpl.complete(handler.base().profile().asUncompleted())
+        return handler
     }
 
     override fun reload(pipeline: ReloadPipeline, zipper: PackZipper) {

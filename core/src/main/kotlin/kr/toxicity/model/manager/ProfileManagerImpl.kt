@@ -22,9 +22,19 @@ import java.util.*
 object ProfileManagerImpl : ProfileManager, GlobalManager {
 
     private val gson = GsonBuilder().create()
-    private lateinit var supplier: ModelProfileSupplier
 
-    override fun supplier(): ModelProfileSupplier = supplier
+    /**
+     * The built-in supplier. It is also the one a compatibility hook (e.g. SkinsRestorer)
+     * delegates to when it has nothing to provide.
+     */
+    val defaultSupplier: ModelProfileSupplier by lazy {
+        if (PLATFORM.nms().isProxyOnlineMode) DefaultHttpModelProfileSupplier() else HttpModelProfileSupplier()
+    }
+
+    @Volatile
+    private var supplier: ModelProfileSupplier? = null
+
+    override fun supplier(): ModelProfileSupplier = supplier ?: defaultSupplier
 
     override fun supplier(supplier: ModelProfileSupplier) {
         this.supplier = supplier
@@ -52,7 +62,7 @@ object ProfileManagerImpl : ProfileManager, GlobalManager {
 
     private data class ProfileSkin(
         val url: String,
-        val metadata: ProfileMetadata
+        val metadata: ProfileMetadata?
     ) {
         fun toURI(): URI = URI.create(url)
     }
@@ -64,7 +74,8 @@ object ProfileManagerImpl : ProfileManager, GlobalManager {
     }
 
     override fun start() {
-        supplier = if (PLATFORM.nms().isProxyOnlineMode) DefaultHttpModelProfileSupplier() else HttpModelProfileSupplier()
+        // A hook that registered its own supplier before this point must not be overwritten.
+        if (supplier == null) supplier = defaultSupplier
     }
 
     override fun reload(pipeline: ReloadPipeline, zipper: PackZipper) {

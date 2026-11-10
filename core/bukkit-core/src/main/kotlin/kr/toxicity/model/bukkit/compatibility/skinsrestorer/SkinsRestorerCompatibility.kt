@@ -51,6 +51,10 @@ class SkinsRestorerCompatibility : Compatibility {
                         ProfileManagerImpl.skin(skin.value)
                     )
                 }.orElse(null)
+        }.thenCompose { profile ->
+            // No skin from SkinsRestorer: leave it to the built-in supplier.
+            if (profile != null) CompletableFuture.completedFuture(profile)
+            else ProfileManagerImpl.defaultSupplier.supply(info).complete()
         }
 
     }
