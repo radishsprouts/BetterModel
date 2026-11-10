@@ -76,8 +76,11 @@ internal class ParallelBundler(
     override fun send(player: PlatformPlayer, onSuccess: Runnable) {
         if (isEmpty) return
         val connection = (player.unwarp() as CraftPlayer).handle.connection
-        subBundlers.forEach {
-            connection.send(it.bundlePacket)
+        val last = subBundlers.lastIndex
+        subBundlers.forEachIndexed { index, bundler ->
+            // 完了時の処理は、最後のパケットの送信が終わった時に1回だけ呼ぶ。
+            if (index == last) connection.send(bundler.bundlePacket, PacketSendListener.thenRun(onSuccess))
+            else connection.send(bundler.bundlePacket)
         }
     }
     override fun isEmpty(): Boolean = selectedBundler.isEmpty()

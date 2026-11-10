@@ -141,14 +141,18 @@ class NMSImpl : NMS {
 
         init {
             val pipeline = getConnection(connection).channel.pipeline()
+            // 前回の注入が残っていると名前が重複して例外になるため、先に外す。
+            pipeline.get(INJECT_NAME)?.let { pipeline.remove(it) }
             pipeline.addBefore(pipeline.first { it.value is Connection }.key, INJECT_NAME, this)
         }
 
         override fun close() {
             val channel = getConnection(connection).channel
-            channel.eventLoop().submit {
+            channel.eventLoop().execute {
                 hitBoxIds.clear()
-                channel.pipeline().remove(INJECT_NAME)
+                // 名前だけで外すと、他の注入に差し替わっていた場合や既に外れている場合に誤る。自分自身の時だけ外す。
+                val pipeline = channel.pipeline()
+                if (pipeline.get(INJECT_NAME) === this) pipeline.remove(this)
             }
         }
 
@@ -158,9 +162,9 @@ class NMSImpl : NMS {
         private val playerModel get() = connection.player.id.toRegistry()
 
         private fun Int.toPlayerEntity() = toEntity(connection.player.level())
-        private fun Entity.toRegistry() = BetterModel.registryOrNull(uuid)
-        private fun Int.toRegistry() = (EntityTrackerRegistry.registry(this) ?: toPlayerEntity()?.toRegistry())?.takeIf {
-            it.isSpawned(player.uniqueId)
+        // ID の表と UUID の表は同時に登録・削除されるため、ID の表だけを引く（UUID の表での二度目の検索をしない）。
+        private fun Int.toRegistry() = EntityTrackerRegistry.registry(this)?.takeIf {
+            it.isSpawned(uuid)
         }
 
         override fun sendEntityData(registry: EntityTrackerRegistry) {
@@ -181,9 +185,19 @@ class NMSImpl : NMS {
 
         private fun <T : ClientGamePacketListener> Packet<in T>.handle(): Packet<in T>? {
             when (this) {
-                is ClientboundBundlePacket -> return if (subPackets() is Keyed) this else ClientboundBundlePacket(subPackets().mapNotNull {
-                    it.handle()
-                })
+                is ClientboundBundlePacket -> {
+                    val sub = subPackets()
+                    if (sub is Keyed) return this
+                    // 中身が1つも変わらなかった時は、束ねパケットを作り直さずそのまま送る。
+                    var changed = false
+                    val handled = ArrayList<Packet<in ClientGamePacketListener>>()
+                    for (packet in sub) {
+                        val result = packet.handle()
+                        if (result !== packet) changed = true
+                        if (result != null) handled += result
+                    }
+                    return if (changed) ClientboundBundlePacket(handled) else this
+                }
                 is ClientboundAddEntityPacket -> {
                     hitBoxIds.remove(id)
                     val entity = id.toPlayerEntity() ?: return this
@@ -243,7 +257,8 @@ class NMSImpl : NMS {
                     return ClientboundContainerSetContentPacket(
                         containerId,
                         stateId,
-                        items.apply {
+                        // 元のリストは同じパケットを受け取る他の送信先でも使われるため、複製してから書き換える。
+                        ArrayList(items).apply {
                             PLAYER_EQUIPMENT_SLOT.forEach(IntConsumer { set(it, EMPTY_ITEM) })
                             set(connection.player.hotbarSlot, EMPTY_ITEM)
                         },
@@ -263,7 +278,8 @@ class NMSImpl : NMS {
         override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
             fun EntityTrackerRegistry.updatePlayerLimb() = BetterModel.platform().scheduler().asyncTaskLater(1) {
                 if (isClosed) return@asyncTaskLater
-                player.handle.containerMenu.sendAllDataToRemote()
+                // 非同期スレッドからメニューを触らず、プレイヤーの所有リージョンで再送する。
+                player.updateInventoryInRegion()
                 trackers().forEach { tracker ->
                     tracker.update(TrackerUpdateAction.itemMapping()) { bone ->
                         !bone.itemMapper.fixed()

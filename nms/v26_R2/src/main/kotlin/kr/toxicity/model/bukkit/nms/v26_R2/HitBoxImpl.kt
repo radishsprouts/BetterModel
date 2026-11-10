@@ -10,6 +10,7 @@ package kr.toxicity.model.bukkit.nms.v26_R2
 import io.papermc.paper.event.entity.EntityKnockbackEvent
 import kr.toxicity.model.api.bone.BoneMovement
 import kr.toxicity.model.api.bone.RenderedBone
+import kr.toxicity.model.api.BetterModel
 import kr.toxicity.model.api.bukkit.BetterModelBukkit
 import kr.toxicity.model.api.config.DebugConfig
 import kr.toxicity.model.api.data.blueprint.ModelBoundingBox
@@ -70,15 +71,29 @@ internal class HitBoxImpl(
     val craftEntity: HitBox by lazy {
         object : CraftArmorStand(Bukkit.getServer() as CraftServer, this), HitBox by this {}
     }
-    val dimensions: EntityDimensions get() = source.run {
-        EntityDimensions(
-            (x() + z()).toFloat() / 2,
-            y().toFloat(),
-            delegate.eyeHeight,
-            EntityAttachments.createDefault(0F, 0F),
-            false
-        ).scale(bone.hitBoxScale())
+    private class DimensionsCache(val scale: Float, val eyeHeight: Float, val dimensions: EntityDimensions)
+    @Volatile
+    private var dimensionsCache: DimensionsCache? = null
+    // 毎 tick 呼ばれるため、hitBoxScale と eyeHeight が変わった時だけ作り直す。
+    val dimensions: EntityDimensions get() {
+        val scale = bone.hitBoxScale()
+        val eyeHeight = delegate.eyeHeight
+        dimensionsCache?.let {
+            if (it.scale == scale && it.eyeHeight == eyeHeight) return it.dimensions
+        }
+        return source.run {
+            EntityDimensions(
+                (x() + z()).toFloat() / 2,
+                y().toFloat(),
+                eyeHeight,
+                EntityAttachments.createDefault(0F, 0F),
+                false
+            ).scale(scale)
+        }.also {
+            dimensionsCache = DimensionsCache(scale, eyeHeight, it)
+        }
     }
+    private var recreateScheduled = false
     private val interaction by lazy {
         HitBoxInteraction(this)
     }
@@ -274,7 +289,24 @@ internal class HitBoxImpl(
         )
     ).mul(movementSpeed()).rotateY(-Math.toRadians(player.yRot.toDouble()).toFloat())
 
+    /**
+     * 本体（delegate）が別リージョンへ移った時に、ヒットボックスを本体の所有リージョンで作り直す。
+     * 一度だけ予約する。本体が既に取り除かれている場合は何もしない。
+     */
+    private fun scheduleRecreate() {
+        if (recreateScheduled) return
+        recreateScheduled = true
+        delegate.bukkitEntity.scheduler.run(PLUGIN, {
+            if (bone.hitBox === craftEntity) bone.createHitBox(BetterModel.nms().adapt(source()), { it === bone }, null)
+        }, null)
+    }
+
     override fun tick() {
+        // Folia では、本体が別リージョンにあるとその状態を読み書きできない。何もせず、本体側のリージョンで作り直す。
+        if (BetterModelBukkit.IS_FOLIA && !Bukkit.isOwnedByCurrentRegion(delegate.bukkitEntity)) {
+            scheduleRecreate()
+            return
+        }
         delegate.removalReason?.let {
             if (!isRemoved) remove(it)
             return
