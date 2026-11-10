@@ -38,9 +38,13 @@ internal data class BaseEntityImpl(
         return source.asAdventure().also { nameCache = NameCache(source, it) }
     }
 
+    // 名前は、常時表示の印（customNameVisible）に関係なく返す。バニラの名札は名前だけを付けて印を立てない。
+    // 見た時にだけ出すか常に出すかは、customNameVisible() を見てネームタグ側が決める。
     override fun customName(): AdventureComponent? = handle().run {
-        if (this is ServerPlayer) cachedName(customName ?: name) else customName?.takeIf { isCustomNameVisible }?.let { cachedName(it) }
+        if (this is ServerPlayer) cachedName(customName ?: name) else customName?.let { cachedName(it) }
     }
+
+    override fun customNameVisible(): Boolean = handle().isCustomNameVisible
 
     override fun entity(): org.bukkit.entity.Entity = delegate
     override fun handle(): Entity = delegate.vanillaEntity
