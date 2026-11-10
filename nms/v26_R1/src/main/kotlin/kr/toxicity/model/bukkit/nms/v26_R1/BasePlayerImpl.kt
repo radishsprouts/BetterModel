@@ -27,7 +27,7 @@ internal data class BasePlayerImpl(
     override fun entity(): Player = delegate
 
     override fun updateInventory() {
-        delegate.handle.containerMenu.sendAllDataToRemote()
+        delegate.updateInventoryInRegion()
     }
 
     override fun platform(): PlatformPlayer = delegate.wrap()

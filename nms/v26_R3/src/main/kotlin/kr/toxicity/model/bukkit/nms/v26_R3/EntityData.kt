@@ -61,9 +61,9 @@ internal class TransformationData {
 
     private var _duration = 0
     private val duration get() = SynchedEntityData.DataValue(DISPLAY_INTERPOLATION_DURATION.id, DISPLAY_INTERPOLATION_DURATION.serializer, _duration)
-    private val translation = Item(Vector3f(), DISPLAY_TRANSLATION, MathUtil::isSimilar, Vector3f::set)
-    private val scale = Item(Vector3f(), DISPLAY_SCALE, MathUtil::isSimilar, Vector3f::set)
-    private val rotation = Item(Quaternionf(), DISPLAY_ROTATION, MathUtil::isSimilar, Quaternionf::set)
+    private val translation = Item(Vector3f(), DISPLAY_TRANSLATION, MathUtil::isSimilar, Vector3f::set) { Vector3f(it) }
+    private val scale = Item(Vector3f(), DISPLAY_SCALE, MathUtil::isSimilar, Vector3f::set) { Vector3f(it) }
+    private val rotation = Item(Quaternionf(), DISPLAY_ROTATION, MathUtil::isSimilar, Quaternionf::set) { Quaternionf(it) }
 
     fun packDirty(entityId: Int, dest: AnimationBundler) {
         val i = translation.cleanIndex + scale.cleanIndex + rotation.cleanIndex
@@ -103,7 +103,8 @@ internal class TransformationData {
         private val initialValue: T,
         private val accessor: EntityDataAccessor<T>,
         private val dirtyChecker: (T, T) -> Boolean,
-        private val setter: (T, T) -> Unit
+        private val setter: (T, T) -> Unit,
+        private val copier: (T) -> T
     ) {
         private var _dirty = false
 
@@ -113,7 +114,8 @@ internal class TransformationData {
             _dirty = false
             forceValue
         } else null
-        val forceValue get() = SynchedEntityData.DataValue(accessor.id, accessor.serializer, initialValue)
+        // パケットは送信時（別スレッド）に読まれるため、書き換わり続ける initialValue ではなく複製を持たせる。
+        val forceValue get() = SynchedEntityData.DataValue(accessor.id, accessor.serializer, copier(initialValue))
 
         fun set(other: T) {
             if (dirtyChecker(initialValue, other)) return

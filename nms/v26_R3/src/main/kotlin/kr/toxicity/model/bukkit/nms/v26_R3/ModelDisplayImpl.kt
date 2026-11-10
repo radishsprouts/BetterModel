@@ -182,12 +182,17 @@ internal class ModelDisplayImpl(
     }
 
     override fun sendDirtyEntityData(bundler: PacketBundler) {
+        // 変更が無い tick では、全項目の走査とリスト生成をしない。
+        if (!entityData.isDirty) return
         entityDataLock.accessToLock {
-            entityData.pack(
+            val packed = entityData.pack(
                 clean = true,
                 itemFilter = { it.isDirty },
                 valueFilter = { ITEM_ENTITY_DATA.contains(it.id) }
             )
+            // SynchedEntityData 全体の dirty フラグを戻す（戻さないと、以後ずっと走査してしまう）。
+            entityData.packDirty()
+            packed
         }?.markVisible(!invisible())?.run {
             bundler += ClientboundSetEntityDataPacket(display.id, this)
         }

@@ -13,6 +13,8 @@ import io.papermc.paper.configuration.GlobalConfiguration
 import it.unimi.dsi.fastutil.ints.IntSet
 import kr.toxicity.model.api.BetterModel
 import kr.toxicity.model.api.bukkit.BetterModelBukkit
+import java.lang.invoke.MethodHandle
+import java.lang.invoke.MethodHandles
 import kr.toxicity.model.api.tracker.EntityTrackerRegistry
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer
 import net.minecraft.network.FriendlyByteBuf
@@ -88,18 +90,21 @@ internal fun Entity.passengerPosition(dest: Vector3f): Vector3f {
     }
 }
 
-private val DATA_ITEMS = SynchedEntityData::class.java.declaredFields.first {
-    it.type.isArray
-}.apply {
-    isAccessible = true
-}
+// 毎 tick 呼ばれるため、Field.get ではなく MethodHandle（static final）で読む。
+private val DATA_ITEMS: MethodHandle = MethodHandles.lookup().unreflectGetter(
+    SynchedEntityData::class.java.declaredFields.first {
+        it.type.isArray
+    }.apply {
+        isAccessible = true
+    }
+)
 
 internal fun SynchedEntityData.pack(
     clean: Boolean = false,
     itemFilter: (DataItem<*>) -> Boolean = { true },
     valueFilter: (DataValue<*>) -> Boolean = { true },
     required: (List<Pair<DataItem<*>, DataValue<*>>>) -> Boolean = { it.isNotEmpty() }
-): List<DataValue<*>>? = (DATA_ITEMS[this] as Array<*>)
+): List<DataValue<*>>? = (DATA_ITEMS.invoke(this) as Array<*>)
     .mapNotNull map@ {
         val item = (it as? DataItem<*>)?.takeIf(itemFilter) ?: return@map null
         val value = item.value().takeIf(valueFilter) ?: return@map null
@@ -176,7 +181,7 @@ internal fun EntityTrackerRegistry.entityFlag(uuid: UUID, byte: Byte): Byte {
 internal fun Vector3f.toVanilla() = Vec3(x.toDouble(), y.toDouble(), z.toDouble())
 internal fun Vec3.toBukkit() = Vector3f(x.toFloat(), y.toFloat(), z.toFloat())
 
-internal inline fun LivingEntity.toEquipmentPacket(mapper: (EquipmentSlot) -> ItemStack? = { getItemBySlot(it).takeUnless { item -> item.isEmpty } }): ClientboundSetEquipmentPacket? {
+internal inline fun LivingEntity.toEquipmentPacket(mapper: (EquipmentSlot) -> ItemStack? = { getItemBySlot(it).takeUnless { item -> item.isEmpty }?.copy() }): ClientboundSetEquipmentPacket? {
     val equip = EquipmentSlot.entries.mapNotNull {
         mapper(it)?.let { item -> com.mojang.datafixers.util.Pair.of(it, item) }
     }
