@@ -516,6 +516,37 @@ public final class RenderedBone implements BoneEventHandler {
     }
 
     /**
+     * 1人のプレイヤーからだけ、モデルのネームタグを消す。
+     * ネームタグが見ているプレイヤーの記録も、そのプレイヤー分だけ消える。
+     *
+     * @param player 消す相手
+     * @param bundler パケットバンドラー
+     */
+    public void remove(@NotNull PlatformPlayer player, @NotNull PacketBundler bundler) {
+        if (display != null) display.remove(bundler);
+        if (nametag != null) nametag.remove(player, bundler);
+    }
+
+    /**
+     * パケットを送らずに、プレイヤーの記録だけを消す。
+     *
+     * @param uuid プレイヤーの UUID
+     */
+    public void forget(@NotNull UUID uuid) {
+        if (nametag != null) nametag.forget(uuid);
+    }
+
+    /**
+     * このボーンが、プレイヤー個別のアニメーション状態を持つか調べる。
+     *
+     * @param uuid プレイヤーの UUID
+     * @return 個別の状態があれば {@code true}
+     */
+    public boolean hasPlayerState(@NotNull UUID uuid) {
+        return perPlayerState.containsKey(uuid);
+    }
+
+    /**
      * Tests whether the parent element is derived from (an instance of) the specified class type.
      *
      * <pre>{@code

@@ -13,6 +13,8 @@ import net.kyori.adventure.text.Component;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.UUID;
+
 /**
  * Represents a nametag associated with a model part.
  * <p>
@@ -49,18 +51,72 @@ public interface ModelNametag {
     void teleport(@NotNull PlatformLocation location);
 
     /**
-     * Sends the nametag packet to a specific player.
+     * 移動と変更分の取り出しを、tick に1回だけ行う。
+     * <p>
+     * {@link #teleport(PlatformLocation)} の後、{@link #send(PlatformPlayer)} の前に、tick ごとに1回呼ぶ。
+     * 変更分はここで取り出して消えるため、全員へ同じ内容が届く。
+     * </p>
+     * <pre>{@code
+     * tag.teleport(tracker.location());
+     * tag.update();
+     * players.forEach(tag::send);
+     * }</pre>
      *
-     * @param player the target player
+     * @since 3.7.0
+     */
+    void update();
+
+    /**
+     * 指定したプレイヤーへネームタグのパケットを送る。
+     * <p>
+     * その tick の {@link #update()} が済んでいること。
+     * </p>
+     *
+     * @param player 送る相手
      * @since 1.15.2
      */
     void send(@NotNull PlatformPlayer player);
 
     /**
-     * Removes the nametag.
+     * 全員からネームタグを消し、見ているプレイヤーの記録も消す。
      *
-     * @param bundler the packet bundler to use
+     * <pre>{@code
+     * tag.remove(bundler);
+     * }</pre>
+     *
+     * @param bundler 使うパケットバンドラー
      * @since 1.15.2
      */
     void remove(@NotNull PacketBundler bundler);
+
+    /**
+     * 1人のプレイヤーからネームタグを消し、そのプレイヤーの記録も消す。
+     * <p>
+     * そのプレイヤーが見ていなければ、バンドラーには何も足さない。
+     * </p>
+     *
+     * <pre>{@code
+     * tag.remove(player, bundler);
+     * }</pre>
+     *
+     * @param player 消す相手
+     * @param bundler 使うパケットバンドラー
+     * @since 3.7.0
+     */
+    void remove(@NotNull PlatformPlayer player, @NotNull PacketBundler bundler);
+
+    /**
+     * パケットを送らずに、プレイヤーの記録だけを消す。
+     * <p>
+     * 接続が既に切れている（退出した）プレイヤー向け。
+     * </p>
+     *
+     * <pre>{@code
+     * tag.forget(player.uuid());
+     * }</pre>
+     *
+     * @param uuid 見ていたプレイヤーの UUID
+     * @since 3.7.0
+     */
+    void forget(@NotNull UUID uuid);
 }

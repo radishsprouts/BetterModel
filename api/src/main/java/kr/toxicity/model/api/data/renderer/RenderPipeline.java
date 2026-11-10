@@ -358,7 +358,7 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
     public void despawn() {
         hitboxes().forEach(HitBox::removeHitBox);
         var bundler = createBundler();
-        remove0(bundler);
+        remove0(bundler, null);
         if (bundler.isNotEmpty()) forEachAllPlayer(bundler::send);
         playerMap.clear();
     }
@@ -649,7 +649,7 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
     public boolean remove(@NotNull PlatformPlayer player) {
         if (playerMap.remove(player.uuid()) == null) return false;
         var bundler = createBundler();
-        remove0(bundler);
+        remove0(bundler, player);
         bundler.send(player);
         return true;
     }
@@ -671,13 +671,21 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
      */
     @ApiStatus.Internal
     public boolean forget(@NotNull UUID uuid) {
+        forEach(b -> b.forget(uuid));
         return playerMap.remove(uuid) != null;
     }
 
+    /**
+     * 消去のパケットを組み立てる。
+     *
+     * @param bundler パケットバンドラー
+     * @param player 1人だけから消す時の相手。{@code null} なら全員から消す
+     */
     @ApiStatus.Internal
-    private void remove0(@NotNull PacketBundler bundler) {
+    private void remove0(@NotNull PacketBundler bundler, @Nullable PlatformPlayer player) {
         despawnPacketHandler.accept(bundler);
-        forEach(b -> b.remove(bundler));
+        if (player == null) forEach(b -> b.remove(bundler));
+        else forEach(b -> b.remove(player, bundler));
     }
 
     /**
