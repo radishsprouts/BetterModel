@@ -24,7 +24,6 @@ import kr.toxicity.model.bukkit.util.registerListener
 import kr.toxicity.model.bukkit.util.wrap
 import kr.toxicity.model.manager.GlobalManager
 import kr.toxicity.model.manager.ReloadPipeline
-import kr.toxicity.model.util.PLATFORM
 import org.bukkit.entity.Entity
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -101,9 +100,8 @@ object EntityManager : GlobalManager {
         fun PlayerQuitEvent.quit() { //Quit
             val wrap = player.wrap()
             BetterModel.registryOrNull(wrap.uuid())?.close()
-            PLATFORM.scheduler().asyncTask {
-                EntityTrackerRegistry.registries { registry -> registry.remove(wrap) }
-            }
+            // The connection is already gone: drop the player from the registries it was viewing without sending packets.
+            EntityTrackerRegistry.forget(wrap.uuid())
             (player.vehicle as? HitBox)?.dismount(wrap)
         }
         @EventHandler(priority = EventPriority.MONITOR)
@@ -160,7 +158,13 @@ object EntityManager : GlobalManager {
     }
 
     override fun reload(pipeline: ReloadPipeline, zipper: PackZipper) {
-        EntityTrackerRegistry.registries(EntityTrackerRegistry::reload)
+        // Reload runs on an async thread, so rebuild each registry on the thread that owns its entity (Folia).
+        EntityTrackerRegistry.registries { registry ->
+            registry.entity().platform().task(registry::reload) {
+                // The entity is gone: drop the stale registry (its saved data stays) so it is rebuilt with the new models when the entity returns.
+                registry.close(TrackerCloseReason.DESPAWN)
+            }
+        }
     }
 
     override fun end() {

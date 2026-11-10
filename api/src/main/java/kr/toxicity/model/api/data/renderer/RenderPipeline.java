@@ -633,6 +633,26 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
         return true;
     }
 
+    /**
+     * Forgets a player without sending any packet.
+     * <p>
+     * This is for a player whose connection is already gone (quit), where despawn packets have no receiver.
+     * </p>
+     *
+     * <pre>{@code
+     * boolean forgot = pipeline.forget(player.getUniqueId());
+     * }</pre>
+     *
+     * @param uuid the UUID of the player to forget
+     * @return {@code true} if the player was spawned, {@code false} otherwise
+     * @throws NullPointerException if {@code uuid} is null
+     * @since 3.7.0
+     */
+    @ApiStatus.Internal
+    public boolean forget(@NotNull UUID uuid) {
+        return playerMap.remove(uuid) != null;
+    }
+
     @ApiStatus.Internal
     private void remove0(@NotNull PacketBundler bundler) {
         despawnPacketHandler.accept(bundler);

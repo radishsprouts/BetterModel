@@ -55,6 +55,53 @@ public interface PlatformEntity extends PlatformRegionHolder {
     }
 
     /**
+     * Schedules a task on the thread that owns this entity.
+     * <p>
+     * If the entity is removed before the task runs, {@code retired} runs instead (on platforms that report it).
+     * The default implementation ignores {@code retired} and delegates to {@link #task(Runnable)}.
+     * </p>
+     *
+     * @param runnable the task to run
+     * @param retired the task to run instead if the entity has been removed
+     * @return the scheduled task, or null if scheduling failed
+     * @since 3.7.0
+     */
+    default @Nullable ModelTask task(@NotNull Runnable runnable, @NotNull Runnable retired) {
+        return task(runnable);
+    }
+
+    /**
+     * Schedules a delayed task on the thread that owns this entity.
+     * <p>
+     * If the entity is removed before the task runs, {@code retired} runs instead (on platforms that report it).
+     * The default implementation ignores {@code retired} and delegates to {@link #taskLater(long, Runnable)}.
+     * </p>
+     *
+     * @param delay the delay in ticks
+     * @param runnable the task to run
+     * @param retired the task to run instead if the entity has been removed
+     * @return the scheduled task, or null if scheduling failed
+     * @since 3.7.0
+     */
+    default @Nullable ModelTask taskLater(long delay, @NotNull Runnable runnable, @NotNull Runnable retired) {
+        return taskLater(delay, runnable);
+    }
+
+    /**
+     * Checks whether the current thread owns this entity, so that it can be read and modified directly.
+     * <p>
+     * On Folia this is true only on the region thread that owns the entity, not on every tick thread.
+     * The default implementation is true on a tick thread.
+     * </p>
+     *
+     * @return true if the current thread may access this entity
+     * @since 3.7.0
+     */
+    default boolean isOwnedByCurrentThread() {
+        return BetterModel.platform().adapter().isTickThread();
+    }
+
+    /**
      * Retrieves the tracker registry associated with this entity.
      *
      * @return an optional containing the registry if it exists

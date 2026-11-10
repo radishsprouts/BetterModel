@@ -211,17 +211,16 @@ private fun spawn(context: CommandContext<AudiencePlayer>) {
     val model = context.model("model") { return audience.warn("Unable to find this model: $it") }
     val type = context.nullable("type", EntityType.HUSK)
     val scale = context.nullable("scale", 1.0)
-    val loc = context.nullable("location") { player.location }
-    loc.run {
-        (world ?: player.world).spawnEntity(
-            this,
-            type
-        )
-    }.takeIf {
-        it.isValid
-    }?.let { entity ->
-        model.create(entity.wrap(), TrackerModifier.DEFAULT) { tracker -> tracker.scaler(ModelScaler.entity().multiply(scale.toFloat())) }
-    } ?: audience.warn("Entity spawning has been blocked.")
+    val loc = context.nullable("location") { player.location }.clone().apply {
+        if (world == null) world = player.world
+    }
+    // The target location can be in another region than the sender (Folia): spawn and create the model in that region's thread.
+    loc.wrap().task {
+        val entity = loc.world.spawnEntity(loc, type)
+        if (entity.isValid) {
+            model.create(entity.wrap(), TrackerModifier.DEFAULT) { tracker -> tracker.scaler(ModelScaler.entity().multiply(scale.toFloat())) }
+        } else audience.warn("Entity spawning has been blocked.")
+    }
 }
 
 private fun version(context: CommandContext<Audience>) {

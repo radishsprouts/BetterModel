@@ -11,10 +11,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
-import it.unimi.dsi.fastutil.ints.Int2ReferenceMap;
-import it.unimi.dsi.fastutil.ints.Int2ReferenceOpenHashMap;
-import it.unimi.dsi.fastutil.objects.Object2ReferenceMap;
-import it.unimi.dsi.fastutil.objects.Object2ReferenceOpenHashMap;
 import kr.toxicity.model.api.BetterModel;
 import kr.toxicity.model.api.config.DebugConfig;
 import kr.toxicity.model.api.entity.BaseEntity;
@@ -60,8 +56,11 @@ import java.util.stream.Stream;
 @ToString(onlyExplicitlyIncluded = true)
 public final class EntityTrackerRegistry {
 
-    private static final Object2ReferenceMap<UUID, EntityTrackerRegistry> UUID_REGISTRY_MAP = new Object2ReferenceOpenHashMap<>();
-    private static final Int2ReferenceMap<EntityTrackerRegistry> ID_REGISTRY_MAP = new Int2ReferenceOpenHashMap<>();
+    // Both maps are read without a lock (they are hot paths of packet handling). Writers take REGISTRY_LOCK so the two maps change together.
+    private static final Map<UUID, EntityTrackerRegistry> UUID_REGISTRY_MAP = new ConcurrentHashMap<>();
+    private static final Map<Integer, EntityTrackerRegistry> ID_REGISTRY_MAP = new ConcurrentHashMap<>();
+    // Player UUID -> registries that player is viewing. Lets a quitting player be dropped without scanning every registry.
+    private static final Map<UUID, Set<EntityTrackerRegistry>> VIEWER_REGISTRY_MAP = new ConcurrentHashMap<>();
     private static final DuplexLock REGISTRY_LOCK = new DuplexLock();
 
     @ToString.Include
@@ -91,7 +90,7 @@ public final class EntityTrackerRegistry {
      * @since 1.15.2
      */
     public static @Nullable EntityTrackerRegistry registry(@NotNull UUID uuid) {
-        return REGISTRY_LOCK.accessToReadLock(() -> UUID_REGISTRY_MAP.get(uuid));
+        return UUID_REGISTRY_MAP.get(uuid);
     }
 
     /**
@@ -102,7 +101,7 @@ public final class EntityTrackerRegistry {
      * @since 1.15.2
      */
     public static @Nullable EntityTrackerRegistry registry(int id) {
-        return REGISTRY_LOCK.accessToReadLock(() -> ID_REGISTRY_MAP.get(id));
+        return ID_REGISTRY_MAP.get(id);
     }
 
     /**
@@ -137,7 +136,7 @@ public final class EntityTrackerRegistry {
      * @since 1.15.2
      */
     public static @NotNull @Unmodifiable List<EntityTrackerRegistry> registries() {
-        return REGISTRY_LOCK.accessToReadLock(() -> ImmutableList.copyOf(UUID_REGISTRY_MAP.values()));
+        return ImmutableList.copyOf(UUID_REGISTRY_MAP.values());
     }
 
     /**
@@ -155,19 +154,44 @@ public final class EntityTrackerRegistry {
 
     private static @NotNull EntityTrackerRegistry create(@NotNull BaseEntity entity) {
         var uuid = entity.uuid();
-        EntityTrackerRegistry registry;
-        synchronized (uuid) {
-            var get2 = registry(uuid);
-            if (get2 != null) return get2;
-            registry = new EntityTrackerRegistry(entity);
-            REGISTRY_LOCK.accessToWriteLock(() -> {
-                UUID_REGISTRY_MAP.put(registry.uuid, registry);
-                ID_REGISTRY_MAP.put(registry.id, registry);
-                return null;
-            });
-        }
-        registry.initialLoad();
+        var created = new boolean[1];
+        // Check and put inside the same write lock: UUID instances are not interned, so synchronizing on one never excluded another thread.
+        var registry = REGISTRY_LOCK.accessToWriteLock(() -> {
+            var existing = UUID_REGISTRY_MAP.get(uuid);
+            if (existing != null) return existing;
+            var newRegistry = new EntityTrackerRegistry(entity);
+            UUID_REGISTRY_MAP.put(newRegistry.uuid, newRegistry);
+            ID_REGISTRY_MAP.put(newRegistry.id, newRegistry);
+            created[0] = true;
+            return newRegistry;
+        });
+        if (created[0]) registry.initialLoad();
         return registry;
+    }
+
+    /**
+     * Drops a player from every registry the player is viewing, without sending any packet.
+     * <p>
+     * Use this when the player's connection is already gone (quit): despawn packets would have no receiver,
+     * and the lookup is by the player's own viewing list, so no registry is scanned needlessly.
+     * </p>
+     *
+     * <pre>{@code
+     * EntityTrackerRegistry.forget(player.getUniqueId());
+     * }</pre>
+     *
+     * @param uuid the UUID of the player who left
+     * @since 3.7.0
+     */
+    public static void forget(@NotNull UUID uuid) {
+        var viewing = VIEWER_REGISTRY_MAP.remove(uuid);
+        if (viewing == null) return;
+        for (EntityTrackerRegistry registry : viewing) {
+            registry.viewedPlayerMap.remove(uuid);
+            for (EntityTracker tracker : registry.trackers()) {
+                tracker.pipeline.forget(uuid);
+            }
+        }
     }
 
     private static @NotNull Collection<JsonElement> deserialize(@Nullable String raw) {
@@ -303,7 +327,7 @@ public final class EntityTrackerRegistry {
     }
 
     private void initialLoad() {
-        if (BetterModel.platform().adapter().isRegionSafe() && loaded.compareAndSet(false, true)) {
+        if (entity.platform().isOwnedByCurrentThread() && loaded.compareAndSet(false, true)) {
             load();
             refreshPlayer();
         }
@@ -360,17 +384,18 @@ public final class EntityTrackerRegistry {
     public boolean close(@NotNull TrackerCloseReason reason) {
         if (!closed.compareAndSet(false, true)) return false;
         viewedPlayer().forEach(value -> value.sendEntityData(this));
-        viewedPlayerMap.clear();
+        clearViewers();
         for (EntityTracker value : trackers()) {
             value.close(reason);
         }
         if (!reason.shouldBeSave()) runSync(() -> entity.modelData(null));
         REGISTRY_LOCK.accessToWriteLock(() -> {
-            UUID_REGISTRY_MAP.remove(uuid);
-            ID_REGISTRY_MAP.remove(id);
-            if (entity instanceof BasePlayer player) player.updateInventory();
+            // Remove only our own entries: a newer registry for the same entity must stay.
+            UUID_REGISTRY_MAP.remove(uuid, this);
+            ID_REGISTRY_MAP.remove(id, this);
             return null;
         });
+        if (entity instanceof BasePlayer player) player.updateInventory();
         LogUtil.debug(DebugConfig.DebugOption.TRACKER, () -> uuid + "'s tracker registry has been removed. (" + UUID_REGISTRY_MAP.size() + ")");
         return true;
     }
@@ -415,7 +440,21 @@ public final class EntityTrackerRegistry {
         for (EntityTracker value : trackers()) {
             if (!value.forRemoval()) value.despawn();
         }
+        clearViewers();
+    }
+
+    private void clearViewers() {
+        for (UUID viewer : viewedPlayerMap.keySet()) {
+            unlinkViewer(viewer);
+        }
         viewedPlayerMap.clear();
+    }
+
+    private void unlinkViewer(@NotNull UUID viewer) {
+        VIEWER_REGISTRY_MAP.computeIfPresent(viewer, (_, set) -> {
+            set.remove(this);
+            return set.isEmpty() ? null : set;
+        });
     }
 
     /**
@@ -451,9 +490,10 @@ public final class EntityTrackerRegistry {
     }
 
     private void runSync(@NotNull Runnable runnable) {
-        if (BetterModel.platform().adapter().isTickThread()) {
+        var platform = entity.platform();
+        if (platform.isOwnedByCurrentThread()) {
             runnable.run();
-        } else entity.platform().task(runnable);
+        } else platform.task(runnable);
     }
 
     /**
@@ -545,7 +585,14 @@ public final class EntityTrackerRegistry {
     }
 
     private @NotNull PlayerChannelCache registerPlayer(@NotNull PlayerChannelHandler handler) {
-        return viewedPlayerMap.computeIfAbsent(handler.uuid(), _ -> new PlayerChannelCache(handler));
+        return viewedPlayerMap.computeIfAbsent(handler.uuid(), viewer -> {
+            VIEWER_REGISTRY_MAP.compute(viewer, (_, set) -> {
+                var viewing = set != null ? set : ConcurrentHashMap.<EntityTrackerRegistry>newKeySet();
+                viewing.add(this);
+                return viewing;
+            });
+            return new PlayerChannelCache(handler);
+        });
     }
 
     /**
@@ -568,6 +615,7 @@ public final class EntityTrackerRegistry {
     public boolean remove(@NotNull PlatformPlayer player) {
         var cache = viewedPlayerMap.remove(player.uuid());
         if (cache == null) return false;
+        unlinkViewer(player.uuid());
         var handler = cache.channelHandler;
         handler.sendEntityData(this);
         for (EntityTracker value : trackers()) {

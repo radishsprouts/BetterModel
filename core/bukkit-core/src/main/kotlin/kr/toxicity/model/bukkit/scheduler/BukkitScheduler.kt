@@ -12,6 +12,7 @@ import kr.toxicity.model.api.scheduler.ModelTask
 import kr.toxicity.model.bukkit.util.PLUGIN
 import org.bukkit.Bukkit
 import org.bukkit.Location
+import org.bukkit.entity.Entity
 import org.bukkit.scheduler.BukkitTask
 
 class BukkitScheduler : BukkitModelScheduler {
@@ -31,6 +32,12 @@ class BukkitScheduler : BukkitModelScheduler {
         Bukkit.getScheduler().runTask(PLUGIN, runnable).wrap()
     }
     override fun taskLater(location: Location, delay: Long, runnable: Runnable) = ifEnabled {
+        Bukkit.getScheduler().runTaskLater(PLUGIN, runnable, delay).wrap()
+    }
+    override fun task(entity: Entity, runnable: Runnable, retired: Runnable) = ifEnabled {
+        Bukkit.getScheduler().runTask(PLUGIN, runnable).wrap()
+    }
+    override fun taskLater(entity: Entity, delay: Long, runnable: Runnable, retired: Runnable) = ifEnabled {
         Bukkit.getScheduler().runTaskLater(PLUGIN, runnable, delay).wrap()
     }
     override fun asyncTask(runnable: Runnable) = Bukkit.getScheduler().runTaskAsynchronously(PLUGIN, runnable).wrap()
