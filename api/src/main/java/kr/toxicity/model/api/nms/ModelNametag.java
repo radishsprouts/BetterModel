@@ -43,6 +43,18 @@ public interface ModelNametag {
     void component(@Nullable Component component);
 
     /**
+     * 今設定されている文字を返す（観測用。状態は変えない）。
+     *
+     * <pre>{@code
+     * var text = tag.component();
+     * }</pre>
+     *
+     * @return 最後に {@link #component(Component)} で設定した文字。何も設定していない、または消した場合は null
+     * @since 3.7.0
+     */
+    @Nullable Component component();
+
+    /**
      * Teleports the nametag to a new location.
      *
      * @param location the target location

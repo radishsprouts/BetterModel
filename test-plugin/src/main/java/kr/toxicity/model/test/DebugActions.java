@@ -23,6 +23,7 @@ import kr.toxicity.model.api.tracker.EntityTracker;
 import kr.toxicity.model.api.tracker.TrackerModifier;
 import kr.toxicity.model.api.util.function.BonePredicate;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
@@ -169,7 +170,8 @@ final class DebugActions implements Listener {
     /**
      * エンティティのカスタム名を Bukkit API で変える。
      * <p>
-     * 本体は作成時にだけカスタム名を読むため、変えた名前がモデルのネームタグへ届くかを確かめる用。
+     * 本体は名前の変更を tick ごとに見て、自動で作ったネームタグへ反映する。
+     * 変えた名前がモデルのネームタグへ届くかを確かめる用で、反映の結果は {@link #nametagShow} で読む。
      * </p>
      *
      * @param text 新しい名前。null なら消す
@@ -179,8 +181,33 @@ final class DebugActions implements Listener {
         entity.customName(text == null ? null : Component.text(text));
         entity.setCustomNameVisible(text != null);
         out.line("customName を変更: " + before + " -> " + entity.customName());
-        out.line("BaseEntity.customName()=" + tracker.sourceEntity().customName() + "（本体が作成時にしか読まないため、既存のネームタグは自動では変わらない見込み）");
+        out.line("BaseEntity.customName()=" + describe(tracker.sourceEntity().customName()) + "（ネームタグへの反映は次の tick 以降。tag show で確かめる）");
         viewerLine(out, tracker);
+    }
+
+    /**
+     * 骨が持つネームタグの今の文字を、エンティティの名前と並べて出す。
+     * <p>
+     * 本体が自動で作ったものと、{@link #nametagAttach} で付けたものを区別して出す。
+     * </p>
+     */
+    void nametagShow(@NotNull DebugReport out, @NotNull EntityTracker tracker) {
+        var attached = nametags.get(tracker);
+        var found = 0;
+        for (RenderedBone bone : tracker.bones()) {
+            var tag = bone.getNametag();
+            if (tag == null) continue;
+            found++;
+            out.line("骨 " + bone.name().name() + " ネームタグの文字=" + describe(tag.component())
+                + (tag == attached ? "（tag attach で付けたもの）" : "（本体が自動で作ったもの）"));
+        }
+        if (found == 0) out.line("ネームタグを持つ骨が無い");
+        out.line("エンティティの名前(BaseEntity.customName)=" + describe(tracker.sourceEntity().customName()));
+    }
+
+    private static @NotNull String describe(@Nullable Component component) {
+        if (component == null) return "なし(null)";
+        return component instanceof TextComponent text ? "「" + text.content() + "」" : component.toString();
     }
 
     /**

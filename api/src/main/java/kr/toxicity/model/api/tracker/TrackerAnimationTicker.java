@@ -18,7 +18,7 @@ import kr.toxicity.model.api.platform.PlatformLocation;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -53,12 +53,13 @@ final class TrackerAnimationTicker {
     private final RenderPipeline pipeline;
 
     private final List<PlayerChannelHandler> viewedPlayers = new ObjectArrayList<>();
-    private final Map<UUID, Viewer> viewers = new HashMap<>();
+    // 書き込みはトラッカーのシャードのスレッドだけ。観測（snapshot）が別のスレッドから読むため ConcurrentHashMap にしている。
+    private final Map<UUID, Viewer> viewers = new ConcurrentHashMap<>();
     private final Map<UUID, PerPlayerCache> perPlayerAnimationCache = new ConcurrentHashMap<>();
 
-    // トラッカーのシャードのスレッドだけが触る。
-    private long version = 0L;
-    private long tickStamp = 0L;
+    // 書き込みはトラッカーのシャードのスレッドだけ。観測（snapshot）が読むため volatile にしている。
+    private volatile long version = 0L;
+    private volatile long tickStamp = 0L;
     private final int phase = ThreadLocalRandom.current().nextInt(64);
 
     private volatile boolean immediate;
@@ -94,7 +95,11 @@ final class TrackerAnimationTicker {
         var forced = immediate;
         if (forced) immediate = false;
         var changed = pipeline.tick();
-        if (changed) pipeline.sync(++version);
+        if (changed) {
+            var next = version + 1;
+            version = next;
+            pipeline.sync(next);
+        }
         recalculateViewedPlayers();
         sendGlobal(frame, location, forced, changed);
         if (!perPlayerAnimationCache.isEmpty()) perPlayerAnimationCache.values().forEach(PerPlayerCache::send);
@@ -148,7 +153,9 @@ final class TrackerAnimationTicker {
         var lod = !forced && config.animationLod();
         // 距離の計算は 1 MC ティックに 1 回。
         var refresh = forced || frame % Tracker.MINECRAFT_TICK_MULTIPLIER == 0;
-        var stamp = ++tickStamp;
+        var stamp = tickStamp + 1;
+        tickStamp = stamp;
+        var version = this.version;
         Long2ReferenceOpenHashMap<AnimationBundler> bundlers = null;
         for (PlayerChannelHandler channel : viewedPlayers) {
             var viewer = viewers.get(channel.uuid());
@@ -161,16 +168,17 @@ final class TrackerAnimationTicker {
                 viewer.step = lod ? stepOf(config, channel, location) : 1;
             }
             viewer.stamp = stamp;
-            if (viewer.sent >= version) continue;
+            var sent = viewer.sent;
+            if (sent >= version) continue;
             var step = viewer.step;
             if (step > 1 && (frame + phase) % step != 0) continue;
             var minDuration = step > 1 ? (step + Tracker.MINECRAFT_TICK_MULTIPLIER - 1) / Tracker.MINECRAFT_TICK_MULTIPLIER : 0;
-            var key = (viewer.sent << 16) | (minDuration & 0xFFFF);
+            var key = (sent << 16) | (minDuration & 0xFFFF);
             if (bundlers == null) bundlers = new Long2ReferenceOpenHashMap<>();
             var bundler = bundlers.get(key);
             if (bundler == null) {
                 bundler = pipeline.createAnimationBundler();
-                pipeline.send(bundler, viewer.sent, minDuration);
+                pipeline.send(bundler, sent, minDuration);
                 bundlers.put(key, bundler);
             }
             if (bundler.isNotEmpty()) bundler.send(channel);
@@ -193,11 +201,26 @@ final class TrackerAnimationTicker {
         return 1;
     }
 
+    /**
+     * 視聴者ごとの今の LOD の段と、最後に送った版を、コピーして返す（観測用。状態は変えない）。
+     * <p>
+     * 別のスレッドから呼んでよい。tick と同時に呼ぶと、視聴者ごとの値は互いに少しずれた時点のものになりうる。
+     * </p>
+     *
+     * @return 読み取り専用の写し
+     * @since 3.7.0
+     */
+    @NotNull TrackerSyncSnapshot snapshot() {
+        var list = new ArrayList<TrackerSyncSnapshot.ViewerSync>(viewers.size());
+        viewers.forEach((uuid, viewer) -> list.add(new TrackerSyncSnapshot.ViewerSync(uuid, viewer.step, viewer.sent)));
+        return new TrackerSyncSnapshot(version, tickStamp, List.copyOf(list));
+    }
+
     private static final class Viewer {
         /** この視聴者へ送った姿勢の最後の版。 */
-        private long sent;
+        private volatile long sent;
         /** 1回の送信にまとめるフレーム数。 */
-        private int step = 1;
+        private volatile int step = 1;
         private long stamp;
 
         private Viewer(long sent) {

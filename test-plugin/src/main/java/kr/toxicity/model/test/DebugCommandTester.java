@@ -153,12 +153,13 @@ public final class DebugCommandTester implements ModelTester, TabCompleter, org.
     }
 
     private void tag(@NotNull CommandSender sender, @NotNull DebugReport out, @NotNull Args args) {
-        switch (required(args, 0, "name | attach | text | remove")) {
+        switch (required(args, 0, "name | show | attach | text | remove")) {
             case "name" -> {
                 var text = args.text(1);
                 if (text.isEmpty()) throw new IllegalArgumentException("名前（消すなら clear）を書く");
                 run(sender, out, args, true, (entity, tracker) -> actions.nameEntity(out, entity, tracker, text.equals("clear") ? null : text));
             }
+            case "show" -> run(sender, out, args, true, (_, tracker) -> actions.nametagShow(out, tracker));
             case "attach" -> {
                 var text = args.text(1);
                 if (text.isEmpty()) throw new IllegalArgumentException("ネームタグの文字を書く");
@@ -171,7 +172,7 @@ public final class DebugCommandTester implements ModelTester, TabCompleter, org.
                 run(sender, out, args, true, (_, tracker) -> actions.nametagText(out, tracker, text));
             }
             case "remove" -> run(sender, out, args, true, (_, tracker) -> actions.nametagRemove(out, tracker));
-            default -> throw new IllegalArgumentException("tag は name / attach / text / remove");
+            default -> throw new IllegalArgumentException("tag は name / show / attach / text / remove");
         }
     }
 
@@ -190,11 +191,12 @@ public final class DebugCommandTester implements ModelTester, TabCompleter, org.
     private void help(@NotNull DebugReport out) {
         out.line("使い方: /bmtest <サブコマンド> ...（op 専用。対象は見ている Mob、見えなければ近くの最寄り。target=<UUID> で指定、model=<名前> でモデルを選ぶ）");
         out.line("  targets                              … モデルが付いたエンティティの UUID 一覧");
-        out.line("  info / lod                           … V3/V4 トラッカーの状態と、視聴者ごとの距離・期待LOD段");
-        out.line("  watch start [period=20] [count=10] [bone=a,b] / watch stop … V3/V4 一定間隔で姿勢と距離をログへ");
+        out.line("  info / lod                           … V3/V4 トラッカーの状態と、視聴者ごとの距離・実際のLOD段・期待LOD段・最後に送った版");
+        out.line("  watch start [period=20] [count=10] [bone=a,b] / watch stop … V3/V4 一定間隔で姿勢と距離・LOD段・送った版をログへ（stop はハンドラを外す）");
         out.line("  anim list|pose [limit=12]            … V2 アニメーション一覧・骨の姿勢");
         out.line("  anim play <名前> [once|loop|hold] [speed=1.0] / anim stop <名前> / anim replace <元> <先> [once|loop|hold] … V2");
-        out.line("  tag name <文字|clear>                … V5 Bukkit の customName を変える");
+        out.line("  tag name <文字|clear>                … V5 Bukkit の customName を変える（モデルのネームタグが追随する）");
+        out.line("  tag show                             … V5 骨のネームタグの今の文字と、エンティティの名前を出す");
         out.line("  tag attach <文字> [bone=名前] / tag text <文字> / tag remove … V5 テスト用ネームタグの追加・文字変更・削除");
         out.line("  hitbox cancel on|off / hitbox status … V10 ヒットボックスの攻撃・右クリックを取り消す");
         out.line("  skin <モデル名> <プレイヤー名|fail|broken> … V9 皮膚を使うモデルを付ける（fail は取得失敗する名前、broken は complete が例外）");
@@ -282,7 +284,7 @@ public final class DebugCommandTester implements ModelTester, TabCompleter, org.
         List<String> candidates = switch (sub) {
             case "watch" -> args.length == 2 ? List.of("start", "stop") : List.of("period=", "count=", "bone=");
             case "anim" -> args.length == 2 ? List.of("list", "play", "stop", "replace", "pose") : List.of("once", "loop", "hold", "speed=");
-            case "tag" -> args.length == 2 ? List.of("name", "attach", "text", "remove") : List.of("bone=");
+            case "tag" -> args.length == 2 ? List.of("name", "show", "attach", "text", "remove") : List.of("bone=");
             case "hitbox" -> args.length == 2 ? List.of("cancel", "status") : List.of("on", "off");
             case "skin" -> args.length == 3 ? List.of("fail", "broken") : args.length == 2 ? new ArrayList<>(BetterModel.limbKeys()) : List.of();
             default -> List.of();
