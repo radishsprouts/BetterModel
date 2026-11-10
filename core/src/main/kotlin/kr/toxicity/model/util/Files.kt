@@ -10,8 +10,10 @@ package kr.toxicity.model.util
 import java.awt.image.BufferedImage
 import java.io.File
 import java.io.InputStream
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.util.stream.Stream
 import javax.imageio.ImageIO
 
@@ -23,6 +25,18 @@ inline fun File.getOrCreateDirectory(name: String, initialConsumer: (File) -> Un
 }
 
 fun File.subFiles(): List<File> = listFiles()?.toList() ?: emptyList()
+
+/**
+ * Moves a completed temporary file onto its final path so that readers never see a half-written file.
+ * An atomic move is used when the file system supports it.
+ */
+fun moveReplacing(source: Path, target: Path) {
+    try {
+        Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+    } catch (e: AtomicMoveNotSupportedException) {
+        Files.move(source, target, StandardCopyOption.REPLACE_EXISTING)
+    }
+}
 
 inline fun copyResourceAs(name: String, block: (InputStream) -> Unit) {
     PLATFORM.getResource(name)?.use(block)

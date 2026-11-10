@@ -16,10 +16,18 @@ class BetterModelEvaluatorImpl : BetterModelEvaluator {
 
     private val molang = MolangCompiler.create(MolangCompiler.DEFAULT_FLAGS, javaClass.classLoader)
 
-    private fun Float.query() = MolangRuntime.runtime()
-        .setQuery("life_time", this)
-        .setQuery("anim_time", this)
-        .create()
+    // A runtime is reused per thread. Its variable storage is mutable, so it is cleared on every evaluation
+    // to behave exactly like a freshly created runtime.
+    private val runtime = ThreadLocal.withInitial { MolangRuntime.runtime().create() }
+
+    private fun Float.query(): MolangRuntime = runtime.get().apply {
+        clearParameters()
+        setThisValue(0F)
+        edit()
+            .clearVariable()
+            .setQuery("life_time", this@query)
+            .setQuery("anim_time", this@query)
+    }
 
     override fun compile(expression: String): Float2FloatFunction {
         val compiled = molang.compile(expression)
