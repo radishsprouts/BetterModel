@@ -9,6 +9,9 @@ package kr.toxicity.model.bukkit.nms.v26_R3
 
 import kr.toxicity.model.api.nms.PacketBundler
 import kr.toxicity.model.api.platform.PlatformPlayer
+import kr.toxicity.model.bukkit.util.unwarp
+import kr.toxicity.model.nms.PacketChunk
+import kr.toxicity.model.nms.SplitPackets
 import net.kyori.adventure.key.Key
 import net.kyori.adventure.key.Keyed
 import net.minecraft.network.PacketSendListener
@@ -38,11 +41,8 @@ internal fun Packet<*>.assumeSize() = when (this) {
     else -> 1
 }
 
-internal interface PluginBundlePacketImpl : Iterable<ClientPacket>, Keyed {
+internal interface PluginBundlePacketImpl : Iterable<ClientPacket>, Keyed, PacketChunk<ClientPacket> {
     val bundlePacket: ClientboundBundlePacket
-    fun size(): Int
-    fun isEmpty(): Boolean
-    fun add(other: ClientPacket)
 }
 
 internal class SimpleBundler(
@@ -58,24 +58,20 @@ internal class SimpleBundler(
     override fun size(): Int = list.size
     override fun key(): Key = KEY
     override fun iterator(): MutableIterator<ClientPacket> = list.iterator()
-    override fun add(other: ClientPacket) {
-        list += other
+    override fun add(packet: ClientPacket) {
+        list += packet
     }
 }
 
 internal class ParallelBundler(
-    private val threshold: Int
+    threshold: Int
 ) : PacketBundler {
-    private val subBundlers = mutableListOf<PluginBundlePacketImpl>()
-    private var sizeAssume = 0
-    private val newBundler get() = bundlerOf().apply {
-        sizeAssume = 0
-        subBundlers += this
-    }
-    private var selectedBundler = newBundler
+    // 束ねパケットが大きくなりすぎないよう、見積もりがしきい値を超えるたびに新しい束ねパケットへ振り分ける（振り分けは core の共通部分）。
+    private val chunks = SplitPackets<ClientPacket, SimpleBundler>(threshold, Packet<*>::assumeSize) { bundlerOf() }
     override fun send(player: PlatformPlayer, onSuccess: Runnable) {
         if (isEmpty) return
         val connection = (player.unwarp() as CraftPlayer).handle.connection
+        val subBundlers = chunks.chunks
         val last = subBundlers.lastIndex
         subBundlers.forEachIndexed { index, bundler ->
             // 完了時の処理は、最後のパケットの送信が終わった時に1回だけ呼ぶ。
@@ -83,12 +79,9 @@ internal class ParallelBundler(
             else connection.send(bundler.bundlePacket)
         }
     }
-    override fun isEmpty(): Boolean = selectedBundler.isEmpty()
-    override fun size(): Int = subBundlers.sumOf(PluginBundlePacketImpl::size)
+    override fun isEmpty(): Boolean = chunks.isEmpty()
+    override fun size(): Int = chunks.size()
     fun add(other: ClientPacket) {
-        (if (sizeAssume > threshold) newBundler else selectedBundler)
-            .apply { selectedBundler = this }
-            .add(other)
-        sizeAssume += other.assumeSize()
+        chunks.add(other)
     }
 }

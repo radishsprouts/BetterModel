@@ -46,6 +46,15 @@ abstract class BetterModelPlugin : AbstractBetterModelPlugin() {
 
     private lateinit var props: BetterModelProperties
 
+    /**
+     * サーバーの版に合った NMS の実装を作る。版ごとの実装を持つ platform 側が実装する。
+     *
+     * @param version サーバーの Minecraft の版
+     * @return NMS の実装
+     * @throws UnsupportedOperationException 対応していない版の場合
+     */
+    protected abstract fun createNms(version: MinecraftVersion): NMS
+
     /** [onEnable] で managers の start() に入ったか。初回リロードの成否とは無関係に、終了処理を行うかの判定に使う。 */
     @Volatile
     private var started = false
@@ -53,7 +62,7 @@ abstract class BetterModelPlugin : AbstractBetterModelPlugin() {
     override fun onLoad() {
         super.onLoad()
         props = runCatching {
-            BetterModelProperties(this)
+            BetterModelProperties(this, ::createNms)
         }.getOrElse {
             warn(
                 "Unable to start BetterModel.".toComponent(),

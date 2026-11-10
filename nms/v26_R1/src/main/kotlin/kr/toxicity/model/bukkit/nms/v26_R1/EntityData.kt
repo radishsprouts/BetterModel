@@ -9,6 +9,7 @@ package kr.toxicity.model.bukkit.nms.v26_R1
 
 import kr.toxicity.model.api.nms.AnimationBundler
 import kr.toxicity.model.api.util.MathUtil
+import kr.toxicity.model.nms.DirtyValue
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket
 import net.minecraft.network.syncher.EntityDataAccessor
 import net.minecraft.network.syncher.SynchedEntityData
@@ -99,28 +100,25 @@ internal class TransformationData {
         rotation.forceValue
     )
 
+    /** 変更の記録（core の共通部分）を、この版の DataValue に包む。 */
     private class Item<T : Any>(
-        private val initialValue: T,
+        initialValue: T,
         private val accessor: EntityDataAccessor<T>,
-        private val dirtyChecker: (T, T) -> Boolean,
-        private val setter: (T, T) -> Unit,
-        private val copier: (T) -> T
+        dirtyChecker: (T, T) -> Boolean,
+        setter: (T, T) -> Unit,
+        copier: (T) -> T
     ) {
-        private var _dirty = false
+        private val state = DirtyValue(initialValue, dirtyChecker, setter, copier)
 
-        val dirty get() = _dirty
-        val cleanIndex get() = if (dirty) 1 else 0
-        val value get() = if (_dirty) {
-            _dirty = false
-            forceValue
-        } else null
-        // パケットは送信時（別スレッド）に読まれるため、書き換わり続ける initialValue ではなく複製を持たせる。
-        val forceValue get() = SynchedEntityData.DataValue(accessor.id, accessor.serializer, copier(initialValue))
+        val cleanIndex get() = state.cleanIndex
+        val value get() = state.takeIfDirty()?.let { dataValue(it) }
+        // パケットは送信時（別スレッド）に読まれるため、書き換わり続ける現在の値ではなく複製を持たせる（複製は DirtyValue が作る）。
+        val forceValue get() = dataValue(state.copy())
 
         fun set(other: T) {
-            if (dirtyChecker(initialValue, other)) return
-            _dirty = true
-            setter(initialValue, other)
+            state.set(other)
         }
+
+        private fun dataValue(value: T) = SynchedEntityData.DataValue(accessor.id, accessor.serializer, value)
     }
 }

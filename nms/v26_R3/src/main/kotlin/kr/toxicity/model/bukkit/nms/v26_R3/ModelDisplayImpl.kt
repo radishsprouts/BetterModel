@@ -18,6 +18,7 @@ import kr.toxicity.model.api.platform.PlatformItemTransform
 import kr.toxicity.model.api.platform.PlatformLocation
 import kr.toxicity.model.api.tracker.ModelRotation
 import kr.toxicity.model.api.util.lock.SingleLock
+import kr.toxicity.model.bukkit.util.unwarp
 import net.minecraft.network.protocol.game.*
 import net.minecraft.network.syncher.EntityDataSerializers
 import net.minecraft.network.syncher.SynchedEntityData

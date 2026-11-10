@@ -21,6 +21,12 @@ import kr.toxicity.model.api.nms.HitBoxListener
 import kr.toxicity.model.api.nms.ModelInteractionHand
 import kr.toxicity.model.api.platform.PlatformEntity
 import kr.toxicity.model.api.platform.PlatformPlayer
+import kr.toxicity.model.bukkit.util.PLUGIN
+import kr.toxicity.model.bukkit.util.hide
+import kr.toxicity.model.bukkit.util.runInRegion
+import kr.toxicity.model.bukkit.util.show
+import kr.toxicity.model.bukkit.util.unwarp
+import kr.toxicity.model.bukkit.util.wrap
 import net.minecraft.network.protocol.game.ServerboundInteractPacket
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer

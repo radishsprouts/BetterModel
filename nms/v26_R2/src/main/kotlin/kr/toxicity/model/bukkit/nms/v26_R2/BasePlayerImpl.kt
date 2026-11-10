@@ -7,36 +7,21 @@
 
 package kr.toxicity.model.bukkit.nms.v26_R2
 
-import kr.toxicity.model.api.bukkit.entity.BaseBukkitEntity
-import kr.toxicity.model.api.bukkit.entity.BaseBukkitPlayer
-import kr.toxicity.model.api.nms.Profiled
-import kr.toxicity.model.api.platform.PlatformPlayer
 import kr.toxicity.model.api.player.PlayerSkinParts
 import kr.toxicity.model.api.profile.ModelProfile
+import kr.toxicity.model.bukkit.nms.AbstractBasePlayer
+import kr.toxicity.model.nms.ProfiledImpl
 import net.minecraft.util.Mth
 import org.bukkit.craftbukkit.entity.CraftPlayer
-import org.bukkit.entity.Player
-import java.util.stream.Stream
 
 internal data class BasePlayerImpl(
     private val delegate: CraftPlayer,
     private val profile: () -> ModelProfile,
     private val skinParts: () -> PlayerSkinParts
-) : BaseBukkitEntity by BaseEntityImpl(delegate), BaseBukkitPlayer, Profiled by ProfiledImpl(PlayerArmorImpl(delegate), profile, skinParts) {
-
-    override fun entity(): Player = delegate
+) : AbstractBasePlayer(delegate, BaseEntityImpl(delegate), ProfiledImpl(PlayerArmorImpl(delegate), profile, skinParts)) {
 
     override fun updateInventory() {
         delegate.updateInventoryInRegion()
-    }
-
-    override fun platform(): PlatformPlayer = delegate.wrap()
-
-    override fun trackedBy(): Stream<PlatformPlayer> = Stream.concat(
-        Stream.of(delegate),
-        delegate.trackedBy.stream()
-    ).map {
-        it.wrap()
     }
 
     override fun bodyYaw(): Float {

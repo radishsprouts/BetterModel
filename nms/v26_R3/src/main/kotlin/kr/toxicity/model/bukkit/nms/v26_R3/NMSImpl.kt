@@ -12,7 +12,6 @@ import com.mojang.authlib.GameProfile
 import io.netty.channel.ChannelDuplexHandler
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelPromise
-import it.unimi.dsi.fastutil.ints.IntOpenHashSet
 import kr.toxicity.model.api.BetterModel
 import kr.toxicity.model.api.bone.RenderedBone
 import kr.toxicity.model.api.bukkit.BetterModelBukkit
@@ -31,6 +30,9 @@ import kr.toxicity.model.api.profile.ModelProfile
 import kr.toxicity.model.api.tracker.EntityTrackerRegistry
 import kr.toxicity.model.api.tracker.TrackerUpdateAction
 import kr.toxicity.model.api.util.TransformedItemStack
+import kr.toxicity.model.bukkit.nms.PlayerPacketState
+import kr.toxicity.model.bukkit.util.unwarp
+import kr.toxicity.model.bukkit.util.wrap
 import net.kyori.adventure.key.Keyed
 import net.minecraft.core.component.DataComponents
 import net.minecraft.network.Connection
@@ -135,9 +137,8 @@ class NMSImpl : NMS {
         private val connection = player.handle.connection
         private val uuid = player.uniqueId
         private val base = adapt(player.wrap())
-        // Follow the client's entity types until removal is written, even after world lookup stops finding them.
-        private val hitBoxIds = IntOpenHashSet()
-        private var dimension = connection.player.level().dimension()
+        // ヒットボックスの追跡・装備を隠すかの判定・ディメンション変更時のリセットは、core の共通部分。
+        private val state = PlayerPacketState(uuid, connection.player.level().dimension())
 
         init {
             val pipeline = getConnection(connection).channel.pipeline()
@@ -149,7 +150,7 @@ class NMSImpl : NMS {
         override fun close() {
             val channel = getConnection(connection).channel
             channel.eventLoop().execute {
-                hitBoxIds.clear()
+                state.clearHitBoxes()
                 // 名前だけで外すと、他の注入に差し替わっていた場合や既に外れている場合に誤る。自分自身の時だけ外す。
                 val pipeline = channel.pipeline()
                 if (pipeline.get(INJECT_NAME) === this) pipeline.remove(this)
@@ -162,10 +163,7 @@ class NMSImpl : NMS {
         private val playerModel get() = connection.player.id.toRegistry()
 
         private fun Int.toPlayerEntity() = toEntity(connection.player.level())
-        // ID の表と UUID の表は同時に登録・削除されるため、ID の表だけを引く（UUID の表での二度目の検索をしない）。
-        private fun Int.toRegistry() = EntityTrackerRegistry.registry(this)?.takeIf {
-            it.isSpawned(uuid)
-        }
+        private fun Int.toRegistry() = state.registryOf(this)
 
         override fun sendEntityData(registry: EntityTrackerRegistry) {
             val handle = registry.entity().handle() as? Entity ?: return
@@ -199,10 +197,10 @@ class NMSImpl : NMS {
                     return if (changed) ClientboundBundlePacket(handled) else this
                 }
                 is ClientboundAddEntityPacket -> {
-                    hitBoxIds.remove(id)
+                    state.forgetHitBox(id)
                     val entity = id.toPlayerEntity() ?: return this
                     if (entity is HitBox) {
-                        hitBoxIds.add(id)
+                        state.trackHitBox(id)
                         return entity.toFakeAddPacket()
                     }
                     val wrap = entity.bukkitEntity.wrap()
@@ -216,7 +214,7 @@ class NMSImpl : NMS {
                     entityIds
                         .asSequence()
                         .mapNotNull {
-                            if (hitBoxIds.remove(it)) null else it.toRegistry()
+                            if (state.forgetHitBox(it)) null else it.toRegistry()
                         }
                         .forEach {
                             it.remove()
@@ -227,33 +225,31 @@ class NMSImpl : NMS {
                         return it.mountPacket(it.entity().handle() as? Entity ?: return this, array = passengers)
                     }
                 }
-                is ClientboundUpdateAttributesPacket if hitBoxIds.contains(entityId) -> return null
+                is ClientboundUpdateAttributesPacket if state.isHitBox(entityId) -> return null
                 is ClientboundSetEntityDataPacket -> {
-                    if (hitBoxIds.contains(id)) return ClientboundSetEntityDataPacket(id, hitBoxData)
+                    if (state.isHitBox(id)) return ClientboundSetEntityDataPacket(id, hitBoxData)
                     id.toRegistry()?.let { registry ->
                         return toRegistryDataPacket(uuid, registry)
                     }
                 }
                 is ClientboundSetEquipmentPacket -> {
-                    if (hitBoxIds.contains(entity)) return null
+                    if (state.isHitBox(entity)) return null
                     entity.toRegistry()?.let {
-                        if (it.hideOption(uuid).equipment()) (it.entity().handle() as? LivingEntity)?.toEmptyEquipmentPacket()?.let { packet ->
+                        if (state.hidesEquipment(it)) (it.entity().handle() as? LivingEntity)?.toEmptyEquipmentPacket()?.let { packet ->
                             return packet
                         }
                     }
                 }
                 is ClientboundRespawnPacket -> {
-                    val nextDimension = commonPlayerSpawnInfo().dimension()
-                    if (dimension != nextDimension) hitBoxIds.clear()
-                    dimension = nextDimension
+                    state.changeDimension(commonPlayerSpawnInfo().dimension())
                     playerModel?.let {
                         bundlerOf(it.mountPacket(connection.player)).send(player.wrap())
                     }
                 }
-                is ClientboundContainerSetSlotPacket if isEquipment(connection.player) && playerModel?.hideOption(uuid)?.equipment() == true -> {
+                is ClientboundContainerSetSlotPacket if isEquipment(connection.player) && state.hidesEquipment(playerModel) -> {
                     return ClientboundContainerSetSlotPacket(containerId, stateId, slot, EMPTY_ITEM)
                 }
-                is ClientboundContainerSetContentPacket if containerId == 0 && playerModel?.hideOption(uuid)?.equipment() == true -> {
+                is ClientboundContainerSetContentPacket if containerId == 0 && state.hidesEquipment(playerModel) -> {
                     return ClientboundContainerSetContentPacket(
                         containerId,
                         stateId,
@@ -289,7 +285,7 @@ class NMSImpl : NMS {
             when (msg) {
                 is ServerboundSetCarriedItemPacket -> {
                     playerModel?.let { registry ->
-                        if (!registry.hideOption(uuid).equipment()) return super.channelRead(ctx, msg)
+                        if (!state.hidesEquipment(registry)) return super.channelRead(ctx, msg)
                         if (CONFIG.cancelPlayerModelInventory()) {
                             connection.send(ClientboundSetHeldSlotPacket(player.inventory.heldItemSlot))
                             return
@@ -299,7 +295,7 @@ class NMSImpl : NMS {
                 }
                 is ServerboundPlayerActionPacket -> {
                     playerModel?.let { registry ->
-                        if (!registry.hideOption(uuid).equipment()) return super.channelRead(ctx, msg)
+                        if (!state.hidesEquipment(registry)) return super.channelRead(ctx, msg)
                         if (CONFIG.cancelPlayerModelInventory()) return
                         registry.updatePlayerLimb()
                     }
