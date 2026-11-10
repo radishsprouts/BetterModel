@@ -47,30 +47,30 @@ public interface BukkitModelScheduler extends ModelScheduler {
     @Nullable ModelTask taskLater(@NotNull Location location, long delay, @NotNull Runnable runnable);
 
     /**
-     * Schedules a task to run on the next tick on the thread that owns the given entity.
+     * 指定したエンティティを所有するスレッドで、次の tick にタスクを実行するよう予約する。
      * <p>
-     * On Folia this uses the entity scheduler, so the task follows the entity when it moves to another region.
+     * Folia ではエンティティのスケジューラを使うため、エンティティが別のリージョンへ移ってもタスクは追従する。
      * </p>
      *
-     * @param entity the entity to synchronize with
-     * @param runnable the task to run
-     * @param retired the task to run instead if the entity is removed before the task could run
-     * @return the scheduled task, or null if scheduling failed
+     * @param entity 同期する対象のエンティティ
+     * @param runnable 実行するタスク
+     * @param retired タスクが実行される前にエンティティが取り除かれた場合に、代わりに実行する処理
+     * @return 予約したタスク。予約に失敗した場合は null
      * @since 3.7.0
      */
     @Nullable ModelTask task(@NotNull Entity entity, @NotNull Runnable runnable, @NotNull Runnable retired);
 
     /**
-     * Schedules a task to run after a delay on the thread that owns the given entity.
+     * 指定したエンティティを所有するスレッドで、遅延後にタスクを実行するよう予約する。
      * <p>
-     * On Folia this uses the entity scheduler, so the task follows the entity when it moves to another region.
+     * Folia ではエンティティのスケジューラを使うため、エンティティが別のリージョンへ移ってもタスクは追従する。
      * </p>
      *
-     * @param entity the entity to synchronize with
-     * @param delay the delay in ticks
-     * @param runnable the task to run
-     * @param retired the task to run instead if the entity is removed before the task could run
-     * @return the scheduled task, or null if scheduling failed
+     * @param entity 同期する対象のエンティティ
+     * @param delay 遅延（tick）
+     * @param runnable 実行するタスク
+     * @param retired タスクが実行される前にエンティティが取り除かれた場合に、代わりに実行する処理
+     * @return 予約したタスク。予約に失敗した場合は null
      * @since 3.7.0
      */
     @Nullable ModelTask taskLater(@NotNull Entity entity, long delay, @NotNull Runnable runnable, @NotNull Runnable retired);

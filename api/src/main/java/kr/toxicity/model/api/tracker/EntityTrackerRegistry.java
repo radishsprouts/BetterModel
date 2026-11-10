@@ -56,10 +56,10 @@ import java.util.stream.Stream;
 @ToString(onlyExplicitlyIncluded = true)
 public final class EntityTrackerRegistry {
 
-    // Both maps are read without a lock (they are hot paths of packet handling). Writers take REGISTRY_LOCK so the two maps change together.
+    // 2つの表はロックなしで読む（パケット処理の頻出経路のため）。書き込みは REGISTRY_LOCK を取り、2つの表を一緒に変更する。
     private static final Map<UUID, EntityTrackerRegistry> UUID_REGISTRY_MAP = new ConcurrentHashMap<>();
     private static final Map<Integer, EntityTrackerRegistry> ID_REGISTRY_MAP = new ConcurrentHashMap<>();
-    // Player UUID -> registries that player is viewing. Lets a quitting player be dropped without scanning every registry.
+    // プレイヤーの UUID から、そのプレイヤーが視聴中のレジストリへの逆引き。退出時に全レジストリを走査せず外すために使う。
     private static final Map<UUID, Set<EntityTrackerRegistry>> VIEWER_REGISTRY_MAP = new ConcurrentHashMap<>();
     private static final DuplexLock REGISTRY_LOCK = new DuplexLock();
 
@@ -155,7 +155,7 @@ public final class EntityTrackerRegistry {
     private static @NotNull EntityTrackerRegistry create(@NotNull BaseEntity entity) {
         var uuid = entity.uuid();
         var created = new boolean[1];
-        // Check and put inside the same write lock: UUID instances are not interned, so synchronizing on one never excluded another thread.
+        // 確認と登録を同じ書き込みロックの中で行う。UUID のインスタンスは共有されないため、UUID に同期しても他のスレッドを排他できなかった。
         var registry = REGISTRY_LOCK.accessToWriteLock(() -> {
             var existing = UUID_REGISTRY_MAP.get(uuid);
             if (existing != null) return existing;
@@ -170,17 +170,17 @@ public final class EntityTrackerRegistry {
     }
 
     /**
-     * Drops a player from every registry the player is viewing, without sending any packet.
+     * プレイヤーを、視聴中のすべてのレジストリから、パケットを送らずに外す。
      * <p>
-     * Use this when the player's connection is already gone (quit): despawn packets would have no receiver,
-     * and the lookup is by the player's own viewing list, so no registry is scanned needlessly.
+     * 接続が既に切れている（退出した）プレイヤーに使う。消去パケットを受け取る相手がいないうえ、
+     * プレイヤー自身の視聴リストから引くため、無駄にレジストリを走査しない。
      * </p>
      *
      * <pre>{@code
      * EntityTrackerRegistry.forget(player.getUniqueId());
      * }</pre>
      *
-     * @param uuid the UUID of the player who left
+     * @param uuid 退出したプレイヤーの UUID
      * @since 3.7.0
      */
     public static void forget(@NotNull UUID uuid) {
@@ -390,7 +390,7 @@ public final class EntityTrackerRegistry {
         }
         if (!reason.shouldBeSave()) runSync(() -> entity.modelData(null));
         REGISTRY_LOCK.accessToWriteLock(() -> {
-            // Remove only our own entries: a newer registry for the same entity must stay.
+            // 自分自身のエントリだけを消す。同じエンティティの新しいレジストリは残す必要がある。
             UUID_REGISTRY_MAP.remove(uuid, this);
             ID_REGISTRY_MAP.remove(id, this);
             return null;

@@ -214,7 +214,7 @@ private fun spawn(context: CommandContext<AudiencePlayer>) {
     val loc = context.nullable("location") { player.location }.clone().apply {
         if (world == null) world = player.world
     }
-    // The target location can be in another region than the sender (Folia): spawn and create the model in that region's thread.
+    // 指定座標は送信者と別のリージョンにある場合がある（Folia）。そのリージョンのスレッドで spawn とモデル作成を行う。
     loc.wrap().task {
         val entity = loc.world.spawnEntity(loc, type)
         if (entity.isValid) {

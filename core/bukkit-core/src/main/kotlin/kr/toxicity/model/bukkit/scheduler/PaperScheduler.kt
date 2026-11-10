@@ -41,7 +41,7 @@ class PaperScheduler : BukkitModelScheduler {
         }, delay).wrap()
     }
 
-    // Entity scheduler: the task follows the entity across regions, and retired runs when the entity is gone.
+    // エンティティのスケジューラ。タスクはリージョンをまたいでエンティティに追従し、エンティティが無くなった時は retired が実行される。
     override fun task(entity: Entity, runnable: Runnable, retired: Runnable): ModelTask? = ifEnabled {
         entity.scheduler.run(PLUGIN, {
             runnable.run()

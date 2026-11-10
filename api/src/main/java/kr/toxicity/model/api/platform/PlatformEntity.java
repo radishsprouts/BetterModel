@@ -55,15 +55,15 @@ public interface PlatformEntity extends PlatformRegionHolder {
     }
 
     /**
-     * Schedules a task on the thread that owns this entity.
+     * このエンティティを所有するスレッドでタスクを実行するよう予約する。
      * <p>
-     * If the entity is removed before the task runs, {@code retired} runs instead (on platforms that report it).
-     * The default implementation ignores {@code retired} and delegates to {@link #task(Runnable)}.
+     * タスクが実行される前にエンティティが取り除かれた場合は、代わりに {@code retired} を実行する（通知できるプラットフォームのみ）。
+     * 既定の実装は {@code retired} を無視し、{@link #task(Runnable)} に委譲する。
      * </p>
      *
-     * @param runnable the task to run
-     * @param retired the task to run instead if the entity has been removed
-     * @return the scheduled task, or null if scheduling failed
+     * @param runnable 実行するタスク
+     * @param retired エンティティが取り除かれていた場合に、代わりに実行する処理
+     * @return 予約したタスク。予約に失敗した場合は null
      * @since 3.7.0
      */
     default @Nullable ModelTask task(@NotNull Runnable runnable, @NotNull Runnable retired) {
@@ -71,16 +71,16 @@ public interface PlatformEntity extends PlatformRegionHolder {
     }
 
     /**
-     * Schedules a delayed task on the thread that owns this entity.
+     * このエンティティを所有するスレッドで、遅延後にタスクを実行するよう予約する。
      * <p>
-     * If the entity is removed before the task runs, {@code retired} runs instead (on platforms that report it).
-     * The default implementation ignores {@code retired} and delegates to {@link #taskLater(long, Runnable)}.
+     * タスクが実行される前にエンティティが取り除かれた場合は、代わりに {@code retired} を実行する（通知できるプラットフォームのみ）。
+     * 既定の実装は {@code retired} を無視し、{@link #taskLater(long, Runnable)} に委譲する。
      * </p>
      *
-     * @param delay the delay in ticks
-     * @param runnable the task to run
-     * @param retired the task to run instead if the entity has been removed
-     * @return the scheduled task, or null if scheduling failed
+     * @param delay 遅延（tick）
+     * @param runnable 実行するタスク
+     * @param retired エンティティが取り除かれていた場合に、代わりに実行する処理
+     * @return 予約したタスク。予約に失敗した場合は null
      * @since 3.7.0
      */
     default @Nullable ModelTask taskLater(long delay, @NotNull Runnable runnable, @NotNull Runnable retired) {
@@ -88,13 +88,13 @@ public interface PlatformEntity extends PlatformRegionHolder {
     }
 
     /**
-     * Checks whether the current thread owns this entity, so that it can be read and modified directly.
+     * 現在のスレッドがこのエンティティを所有しており、直接読み書きしてよいかを調べる。
      * <p>
-     * On Folia this is true only on the region thread that owns the entity, not on every tick thread.
-     * The default implementation is true on a tick thread.
+     * Folia では、すべての tick スレッドではなく、このエンティティを所有するリージョンのスレッドでのみ true になる。
+     * 既定の実装は、tick スレッドであれば true を返す。
      * </p>
      *
-     * @return true if the current thread may access this entity
+     * @return 現在のスレッドがこのエンティティにアクセスしてよい場合は true
      * @since 3.7.0
      */
     default boolean isOwnedByCurrentThread() {

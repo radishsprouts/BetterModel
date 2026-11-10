@@ -100,7 +100,7 @@ object EntityManager : GlobalManager {
         fun PlayerQuitEvent.quit() { //Quit
             val wrap = player.wrap()
             BetterModel.registryOrNull(wrap.uuid())?.close()
-            // The connection is already gone: drop the player from the registries it was viewing without sending packets.
+            // 接続は既に切れている。視聴していたレジストリから、パケットを送らずにプレイヤーを外す。
             EntityTrackerRegistry.forget(wrap.uuid())
             (player.vehicle as? HitBox)?.dismount(wrap)
         }
@@ -158,10 +158,10 @@ object EntityManager : GlobalManager {
     }
 
     override fun reload(pipeline: ReloadPipeline, zipper: PackZipper) {
-        // Reload runs on an async thread, so rebuild each registry on the thread that owns its entity (Folia).
+        // リロードは非同期スレッドで動くため、各レジストリはそのエンティティを所有するスレッドで作り直す（Folia）。
         EntityTrackerRegistry.registries { registry ->
             registry.entity().platform().task(registry::reload) {
-                // The entity is gone: drop the stale registry (its saved data stays) so it is rebuilt with the new models when the entity returns.
+                // エンティティが無くなっている。古いレジストリは閉じる（保存データは残る）ので、エンティティが戻った時に新しいモデルで作り直される。
                 registry.close(TrackerCloseReason.DESPAWN)
             }
         }
