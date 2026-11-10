@@ -192,8 +192,24 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
             if (damageTint.getAndDecrement() == 0) update(TrackerUpdateAction.previousTint());
         });
         rotation(bodyRotator::bodyRotation);
+        completeSourceContext();
         preUpdateConsumer.accept(this);
         EventUtil.call(CreateEntityTrackerEvent.class, () -> new CreateEntityTrackerEvent(this));
+    }
+
+    /**
+     * 皮膚の取得の完了は非同期のスレッドで届くことがある。エンティティの状態を読む処理なので、
+     * エンティティの持ち主のスレッド（Folia ではリージョン）へ移して実行する。
+     * エンティティが取り除かれていた場合は、何もしない。
+     */
+    @Override
+    protected void runOnSourceThread(@NotNull Runnable runnable) {
+        var platform = registry.entity().platform();
+        if (platform.isOwnedByCurrentThread()) {
+            runnable.run();
+            return;
+        }
+        platform.task(runnable, () -> {});
     }
 
     @Override

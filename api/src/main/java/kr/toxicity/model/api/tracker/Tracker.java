@@ -218,9 +218,30 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
             channel -> EventUtil.call(PlayerPerAnimationEndEvent.class, () -> new PlayerPerAnimationEndEvent(this, channel.player()))
         ));
         LogUtil.debug(DebugConfig.DebugOption.TRACKER, () -> getClass().getSimpleName() + " tracker created: " + name());
-        pipeline.getSource().completeContext().thenAccept(context -> {
+    }
+
+    /**
+     * 皮膚などの描画の文脈が完了した時に、骨のアイテムを更新するよう予約する。
+     * <p>
+     * 完了は非同期のスレッドで届くことがあるので、実際の更新は {@link #runOnSourceThread(Runnable)} に任せる。
+     * サブクラスのフィールドが整った後に呼ぶ必要があるため、基底のコンストラクタではなく、
+     * 各サブクラスのコンストラクタの末尾から呼ぶ。
+     * </p>
+     */
+    protected final void completeSourceContext() {
+        pipeline.getSource().completeContext().thenAccept(context -> runOnSourceThread(() -> {
             if (pipeline.matchTree(bone -> bone.updateItem(context))) forceUpdate(true);
-        });
+        }));
+    }
+
+    /**
+     * 描画元の状態を読んでよいスレッドで、処理を実行する。
+     * 既定ではそのスレッドで直接実行する（エンティティに紐づかないトラッカー向け）。
+     *
+     * @param runnable 実行する処理
+     */
+    protected void runOnSourceThread(@NotNull Runnable runnable) {
+        runnable.run();
     }
 
     /**
