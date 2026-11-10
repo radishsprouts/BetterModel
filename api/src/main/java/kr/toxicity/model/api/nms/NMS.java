@@ -254,7 +254,24 @@ public interface NMS {
      * @return the transformed item stack
      * @since 1.15.2
      */
-    @NotNull TransformedItemStack createSkinItem(@NotNull String model, @NotNull List<Float> floats, @NotNull List<Boolean> flags, @NotNull List<String> strings, @NotNull List<Integer> colors);
+    default @NotNull TransformedItemStack createSkinItem(@NotNull String model, @NotNull List<Float> floats, @NotNull List<Boolean> flags, @NotNull List<String> strings, @NotNull List<Integer> colors) {
+        return createSkinItem(model, floats, flags, strings, colors, null);
+    }
+
+    /**
+     * Creates a custom skin item stack with the owner's profile.
+     * 統合版は item_model を使えないため、皮膚の画像を得る元として PROFILE（textures の属性付き）を足す。
+     * Java 版は item_model が優先されるので見た目は変わらない。
+     *
+     * @param model the model name
+     * @param floats a list of floats
+     * @param flags a list of flags
+     * @param strings a list of strings
+     * @param colors a list of colors
+     * @param profile the skin owner's profile, or null
+     * @return the transformed item stack
+     */
+    @NotNull TransformedItemStack createSkinItem(@NotNull String model, @NotNull List<Float> floats, @NotNull List<Boolean> flags, @NotNull List<String> strings, @NotNull List<Integer> colors, @Nullable ModelProfile profile);
 
     /**
      * Checks if the server is in online mode (either natively or via proxy).

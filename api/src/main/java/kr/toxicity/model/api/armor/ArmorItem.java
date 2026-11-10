@@ -16,6 +16,18 @@ import org.jetbrains.annotations.Nullable;
  * @param type armor type
  * @param trim trim
  * @param palette palette
+ * @param itemId 防具のアイテムの id（例 {@code minecraft:iron_helmet}）。統合版で兜を被せるために使う。不明なら null
  */
-public record ArmorItem(int tint, @NotNull String type, @Nullable String trim, @Nullable String palette) {
+public record ArmorItem(int tint, @NotNull String type, @Nullable String trim, @Nullable String palette, @Nullable String itemId) {
+
+    /**
+     * Creates an armor item without an item id.
+     * @param tint tint value
+     * @param type armor type
+     * @param trim trim
+     * @param palette palette
+     */
+    public ArmorItem(int tint, @NotNull String type, @Nullable String trim, @Nullable String palette) {
+        this(tint, type, trim, palette, null);
+    }
 }

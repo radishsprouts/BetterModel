@@ -55,7 +55,8 @@ object SkinManagerImpl : SkinManager, GlobalManager {
 
     private data class SkinModelData(
         private val model: UVModel,
-        val data: UVModelData
+        val data: UVModelData,
+        val profile: ModelProfile
     ) {
         var namespace = model.itemModelNamespace()
             private set
@@ -65,11 +66,12 @@ object SkinManagerImpl : SkinManager, GlobalManager {
         }
     }
 
-    private fun UVModel.asModelData(image: BufferedImage): SkinModelData {
+    private fun UVModel.asModelData(image: BufferedImage, profile: ModelProfile): SkinModelData {
         val data = write(image)
         return SkinModelData(
             this,
-            data
+            data,
+            profile
         )
     }
 
@@ -80,7 +82,8 @@ object SkinManagerImpl : SkinManager, GlobalManager {
         data.floats,
         data.flags,
         emptyList(),
-        colors.takeIf { it.isNotEmpty() }?.let { it + data.colors } ?: data.colors
+        colors.takeIf { it.isNotEmpty() }?.let { it + data.colors } ?: data.colors,
+        profile
     )
 
     private fun SkinModelData.asItem(resource: ArmorResource, item: ArmorItem? = null): TransformedItemStack {
@@ -91,12 +94,18 @@ object SkinManagerImpl : SkinManager, GlobalManager {
                 customModelData(item.type, item.tint, it, item.palette?.let { p -> ArmorManager.armor.colors()[p] })
             } ?: customModelData(item.type, item.tint)
         }
+        // 頭だけ、統合版で兜を被せるために、被せる兜のアイテムの id を strings の末尾に足す。
+        // 防具の select は strings の 0 番・1 番しか見ないので、Java 版の見た目は変わらない。
+        val strings = if (resource == ArmorResource.HELMET && item.itemId() != null) {
+            armorData.strings + "${BedrockIds.ARMOR_PREFIX}${item.itemId()}"
+        } else armorData.strings
         return PLATFORM.nms().createSkinItem(
             namespace,
             data.floats,
             data.flags,
-            armorData.strings,
-            armorData.colors + data.colors
+            strings,
+            armorData.colors + data.colors,
+            profile
         )
     }
 
@@ -282,19 +291,19 @@ object SkinManagerImpl : SkinManager, GlobalManager {
             capeImage: BufferedImage?
         ) : this(
             profile,
-            limbs.head.asModelData(skinImage),
-            limbs.hip.asModelData(skinImage),
-            limbs.waist.asModelData(skinImage),
-            limbs.chest.asModelData(skinImage),
-            (if (profile.skin().slim) limbs.slimLeftArm else limbs.leftArm).asModelData(skinImage),
-            (if (profile.skin().slim) limbs.slimRightArm else limbs.rightArm).asModelData(skinImage),
-            limbs.leftLeg.asModelData(skinImage),
-            limbs.leftForeLeg.asModelData(skinImage),
-            limbs.rightLeg.asModelData(skinImage),
-            limbs.rightForeLeg.asModelData(skinImage),
-            (if (profile.skin().slim) limbs.slimLeftForeArm else limbs.leftForeArm).asModelData(skinImage).asItem(),
-            (if (profile.skin().slim) limbs.slimRightForeArm else limbs.rightForeArm).asModelData(skinImage).asItem(),
-            capeImage?.let { limbs.cape.asModelData(it).asItem() }
+            limbs.head.asModelData(skinImage, profile),
+            limbs.hip.asModelData(skinImage, profile),
+            limbs.waist.asModelData(skinImage, profile),
+            limbs.chest.asModelData(skinImage, profile),
+            (if (profile.skin().slim) limbs.slimLeftArm else limbs.leftArm).asModelData(skinImage, profile),
+            (if (profile.skin().slim) limbs.slimRightArm else limbs.rightArm).asModelData(skinImage, profile),
+            limbs.leftLeg.asModelData(skinImage, profile),
+            limbs.leftForeLeg.asModelData(skinImage, profile),
+            limbs.rightLeg.asModelData(skinImage, profile),
+            limbs.rightForeLeg.asModelData(skinImage, profile),
+            (if (profile.skin().slim) limbs.slimLeftForeArm else limbs.leftForeArm).asModelData(skinImage, profile).asItem(),
+            (if (profile.skin().slim) limbs.slimRightForeArm else limbs.rightForeArm).asModelData(skinImage, profile).asItem(),
+            capeImage?.let { limbs.cape.asModelData(it, profile).asItem() }
         )
         override fun profile(): ModelProfile = profile
         override fun head(armor: PlayerArmor): TransformedItemStack = head.asItem(ArmorResource.HELMET, armor.helmet())

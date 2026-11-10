@@ -22,6 +22,13 @@ internal object BedrockIds {
     private const val SEPARATOR = "\u0000"
 
     /**
+     * 頭の item の custom_model_data の strings に、被せる兜のアイテムの id を載せる時の接頭辞。
+     * KadoDisplayEntity がこの接頭辞で兜を読む（書式は `bm:armor:<namespace>:<id>`）。
+     * 防具の select は strings の 0 番（防具）と 1 番（トリム）しか見ないので、末尾に足しても Java 版の見た目は変わらない。
+     */
+    const val ARMOR_PREFIX = "bm:armor:"
+
+    /**
      * 文字列を UTF-8 にした SHA-256 の先頭 8 バイトを、小文字の16進 16 文字にする。
      *
      * @param value 元の文字列
