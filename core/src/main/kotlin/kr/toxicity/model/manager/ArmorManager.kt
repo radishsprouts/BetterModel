@@ -16,18 +16,27 @@ import kr.toxicity.model.api.pack.PackZipper
 import kr.toxicity.model.util.*
 import net.kyori.adventure.text.format.NamedTextColor
 import java.io.File
+import java.io.InputStream
 import java.net.URI
 import java.net.http.HttpResponse
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import java.util.jar.JarFile
-import java.util.zip.ZipEntry
 import kotlin.io.path.createTempFile
+import kotlin.io.path.deleteIfExists
 
 object ArmorManager : GlobalManager {
 
     private val ARMOR_PATH = "assets/minecraft/textures/entity/equipment/humanoid" to "assets/minecraft/textures/entity/equipment/humanoid_leggings"
     private val ARMOR_TRIM_PATH = "assets/minecraft/textures/trims/entity/humanoid" to "assets/minecraft/textures/trims/entity/humanoid_leggings"
     private const val ARMOR_PALETTE_PATH = "assets/minecraft/textures/palettes/trim"
+
+    /**
+     * 防具素材をすべて取り出した後に書くファイル。素材の取得元の Minecraft の版を保存するので、
+     * 途中で止まった取得は再試行され、サーバーの更新後は素材が取り直される。
+     */
+    private const val COMPLETE_MARKER = ".complete"
+    private const val DOWNLOAD_TIMEOUT_MINUTES = 5L
 
     private val armors = setOf(
         "chainmail",
@@ -86,7 +95,8 @@ object ArmorManager : GlobalManager {
         val latest: ManifestLatest,
         val versions: List<ManifestVersion>
     ) {
-        val manifest get() = versions.associateBy { it.id }[latest.release]!!
+        fun find(id: String) = versions.firstOrNull { it.id == id }
+        val latestManifest get() = versions.first { it.id == latest.release }
     }
 
     private data class ManifestLatest(
@@ -117,7 +127,22 @@ object ArmorManager : GlobalManager {
         val file: File
     )
 
-    private fun downloadMinecraftClient(): CompletableFuture<MinecraftClient?> = httpClient {
+    /**
+     * バージョン一覧（manifest）で使う Minecraft の版 id。patch が 0 の時は書かない（例: "26.1"）。
+     */
+    private fun serverVersionId() = PLATFORM.version().run {
+        if (patch == 0) "$major.$minor" else "$major.$minor.$patch"
+    }
+
+    private fun HttpResponse<InputStream>.requireOk(): HttpResponse<InputStream> {
+        if (statusCode() != 200) {
+            body().close()
+            throw IllegalStateException("Unexpected status code ${statusCode()} from ${uri()}")
+        }
+        return this
+    }
+
+    private fun downloadMinecraftClient(versionId: String): CompletableFuture<MinecraftClient> = httpClient {
         val cacheFolder = DATA_FOLDER.getOrCreateDirectory(".cache")
         sendAsync(
             buildHttpRequest {
@@ -126,9 +151,12 @@ object ArmorManager : GlobalManager {
             },
             HttpResponse.BodyHandlers.ofInputStream()
         ).thenComposeAsync { response1 ->
-            val manifest = response1.toJson(VersionManifest::class.java).manifest
+            val versions = response1.requireOk().toJson(VersionManifest::class.java)
+            val manifest = versions.find(versionId) ?: versions.latestManifest.also {
+                warn("Unable to find the Minecraft $versionId in the version manifest. Use ${it.id} instead.".toComponent())
+            }
             val cache = File(cacheFolder, "${manifest.id}.jar")
-            if (cache.exists() && cache.length() > 0) CompletableFuture.supplyAsync { MinecraftClient(manifest.id, cache) }
+            if (cache.exists() && cache.length() > 0) CompletableFuture.completedFuture(MinecraftClient(manifest.id, cache))
             else sendAsync(
                 buildHttpRequest {
                     GET()
@@ -139,21 +167,25 @@ object ArmorManager : GlobalManager {
                 sendAsync(
                     buildHttpRequest {
                         GET()
-                        uri(response2.toJson(VersionHash::class.java).client.toURI())
+                        uri(response2.requireOk().toJson(VersionHash::class.java).client.toURI())
                     },
                     HttpResponse.BodyHandlers.ofInputStream()
-                ).thenComposeAsync { response3 ->
-                    val temp = createTempFile(cache.parentFile.toPath(), manifest.id, ".tmp").toFile()
-                    response3.body().use { input ->
-                        temp.outputStream().buffered().use(input::copyTo)
+                ).thenApplyAsync { response3 ->
+                    val temp = createTempFile(cache.parentFile.toPath(), manifest.id, ".tmp")
+                    try {
+                        response3.requireOk().body().use { input ->
+                            temp.toFile().outputStream().buffered().use(input::copyTo)
+                        }
+                        moveReplacing(temp, cache.toPath())
+                    } finally {
+                        temp.deleteIfExists()
                     }
-                    temp.renameTo(cache)
-                    CompletableFuture.supplyAsync { MinecraftClient(manifest.id, cache) }
+                    MinecraftClient(manifest.id, cache)
                 }
             }
-        }
+        }.orTimeout(DOWNLOAD_TIMEOUT_MINUTES, TimeUnit.MINUTES)
     }.orElse {
-        CompletableFuture.completedFuture(null)
+        CompletableFuture.failedFuture(it)
     }
 
     private class ArmorImageCache(
@@ -170,13 +202,54 @@ object ArmorManager : GlobalManager {
         }
     }
 
-    private fun JarFile.loadArmorImage(name: String, pathPair: Pair<String, String>) = ArmorImageCache(
-        name,
-        loadImage(pathPair.first, name),
-        loadImage(pathPair.second, name)
-    )
+    private fun JarFile.loadArmorImage(name: String, pathPair: Pair<String, String>): ArmorImageCache? {
+        val armor = loadImage(pathPair.first, name) ?: return null
+        val leggings = loadImage(pathPair.second, name) ?: return null
+        return ArmorImageCache(name, armor, leggings)
+    }
 
-    private fun JarFile.loadImage(path: String, name: String) = getInputStream(ZipEntry("$path/$name.png")).use { it.readAllBytes() }
+    private fun JarFile.loadImage(path: String, name: String): ByteArray? {
+        val entry = getJarEntry("$path/$name.png")
+        if (entry == null) {
+            warn("This asset doesn't exist in the client jar so it will be skipped: $path/$name.png".toComponent(NamedTextColor.YELLOW))
+            return null
+        }
+        return getInputStream(entry).use { it.readAllBytes() }
+    }
+
+    private fun File.isArmorAssetsReady(versionId: String): Boolean {
+        val marker = File(this, COMPLETE_MARKER)
+        return marker.isFile && runCatching { marker.readText() == versionId }.getOrDefault(false)
+    }
+
+    private fun downloadArmorAssets(folder: File, versionId: String, pipeline: ReloadPipeline) {
+        info("Downloading client jar...".toComponent())
+        runCatching {
+            val client = downloadMinecraftClient(versionId).join()
+            val armorsFile = File(folder, "armors").apply { mkdirs() }
+            val trimsFile = File(folder, "armor_trims").apply { mkdirs() }
+            val palettesFile = File(folder, "palettes").apply { mkdirs() }
+            JarFile(client.file).use { jar ->
+                pipeline.forEachParallel(
+                    armors.mapNotNull { name -> jar.loadArmorImage(name, ARMOR_PATH) },
+                    ArmorImageCache::size
+                ) { image -> image.write(armorsFile) }
+                pipeline.forEachParallel(
+                    trims.mapNotNull { name -> jar.loadArmorImage(name, ARMOR_TRIM_PATH) },
+                    ArmorImageCache::size
+                ) { image -> image.write(trimsFile) }
+                pipeline.forEachParallel(
+                    palettes.mapNotNull { name -> jar.loadImage(ARMOR_PALETTE_PATH, name)?.let { name to it } },
+                    { image -> image.second.size.toLong() },
+                ) { image -> File(palettesFile, "${image.first}.png").writeBytes(image.second) }
+            }
+            // 完了印は最後に書く。取得が途中なら印が無いので、次のリロードで再試行される。
+            File(folder, COMPLETE_MARKER).writeText(versionId)
+            info("Download success!".toComponent(NamedTextColor.LIGHT_PURPLE))
+        }.handleFailure {
+            "Unable to download default armor assets. It will be retried on the next reload."
+        }
+    }
 
     override fun reload(
         pipeline: ReloadPipeline,
@@ -186,33 +259,9 @@ object ArmorManager : GlobalManager {
             armor = ArmorModel.EMPTY
             return
         }
-        val folder = DATA_FOLDER.getOrCreateDirectory("armors") {
-            info("Downloading client jar...".toComponent())
-            val armorsFile = File(it, "armors")
-            val trimsFile = File(it, "armor_trims")
-            val palettesFile = File(it, "palettes").apply { mkdirs() }
-            runCatching {
-                downloadMinecraftClient().join()?.let { client ->
-                    JarFile(client.file).use { jar ->
-                        pipeline.forEachParallel(
-                            armors.map { name -> jar.loadArmorImage(name, ARMOR_PATH) },
-                                ArmorImageCache::size
-                        ) { image -> image.write(armorsFile) }
-                        pipeline.forEachParallel(
-                            trims.map { name -> jar.loadArmorImage(name, ARMOR_TRIM_PATH) },
-                            ArmorImageCache::size
-                        ) { image -> image.write(trimsFile) }
-                        pipeline.forEachParallel(
-                            palettes.map { name -> name to jar.loadImage(ARMOR_PALETTE_PATH, name) },
-                            { image -> image.second.size.toLong() },
-                        ) { image -> File(palettesFile, "${image.first}.png").writeBytes(image.second)}
-                    }
-                }
-                info("Download success!".toComponent(NamedTextColor.LIGHT_PURPLE))
-            }.handleFailure {
-                "Unable to download default armor assets."
-            }
-        }
+        val folder = DATA_FOLDER.getOrCreateDirectory("armors")
+        val versionId = serverVersionId()
+        if (!folder.isArmorAssetsReady(versionId)) downloadArmorAssets(folder, versionId, pipeline)
         val textures = PackObfuscator.order()
         val models = PackObfuscator.order()
         armor = ArmorModel.builder()

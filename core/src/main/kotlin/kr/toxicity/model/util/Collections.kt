@@ -12,7 +12,6 @@ import kr.toxicity.model.api.util.CollectionUtil
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.stream.Collectors
 import java.util.stream.Stream
 
@@ -42,24 +41,18 @@ fun <K, V> SequencedMap<K, V>.toImmutableView(): SequencedMap<K, V> = when (this
 fun <T> Stream<T>.toSet(): Set<T> = collect(Collectors.toUnmodifiableSet())
 fun <T> Stream<T>.toMutableSet(): MutableSet<T> = collect(Collectors.toSet())
 
-fun parallelIOThreadPool() = try {
-    ParallelIOThreadPool()
-} catch (error: OutOfMemoryError) {
-    throw RuntimeException("You have to set your Linux max thread limit!", error)
-}
+fun parallelIOThreadPool() = ParallelIOThreadPool()
 
 class ParallelIOThreadPool : AutoCloseable {
     private val available = Runtime.getRuntime().availableProcessors() * 2
-    private val integer = AtomicInteger()
-    private val pool = Executors.newFixedThreadPool(available) {
-        Thread(it).apply {
-            isDaemon = true
-            name = "BetterModel-IO-Worker-${integer.andIncrement}"
-            uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { thread, exception ->
+    private val pool = Executors.newThreadPerTaskExecutor(
+        Thread.ofVirtual()
+            .name("BetterModel-IO-Worker-", 0)
+            .uncaughtExceptionHandler { thread, exception ->
                 exception.handleException("A error has been occurred in ${thread.name}")
             }
-        }
-    }
+            .factory()
+    )
 
     override fun close() {
         pool.close()
@@ -80,7 +73,7 @@ class ParallelIOThreadPool : AutoCloseable {
             val queue = arrayListOf<Runnable>()
             var i = 0
             val add = (size.toDouble() / available).toInt()
-            while (i <= size) {
+            while (i < size) {
                 val list = ArrayList<T>(add)
                 for (t in i..<(i + add).coerceAtMost(size)) {
                     val ht = t / 2
