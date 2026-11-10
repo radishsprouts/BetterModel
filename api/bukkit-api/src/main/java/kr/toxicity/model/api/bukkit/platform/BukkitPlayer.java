@@ -43,4 +43,9 @@ public final class BukkitPlayer extends BukkitLivingEntity implements PlatformPl
     public @NotNull String name() {
         return source().getName();
     }
+
+    @Override
+    public boolean online() {
+        return source().isOnline();
+    }
 }

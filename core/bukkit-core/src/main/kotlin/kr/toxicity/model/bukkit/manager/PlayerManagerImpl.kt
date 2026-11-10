@@ -34,7 +34,7 @@ object PlayerManagerImpl : PlayerManager, GlobalManager {
         registerListener(object : Listener {
             @EventHandler(priority = EventPriority.HIGHEST)
             fun PlayerJoinEvent.join() {
-                if (player.isOnline) runCatching { //For fake player
+                if (player.isOnline) runCatching { //偽のプレイヤーは除く
                     player.wrap().register()
                 }.handleFailure {
                     "Unable to load ${player.name}'s data."
@@ -49,10 +49,18 @@ object PlayerManagerImpl : PlayerManager, GlobalManager {
         })
     }
 
-    private fun PlatformPlayer.register() = playerMap.computeIfAbsent(uuid()) {
-        PLATFORM.nms().inject(this)
-    }.apply {
-        SkinManagerImpl.complete(base().profile().asUncompleted())
+    private fun PlatformPlayer.register(): PlayerChannelHandler {
+        playerMap[uuid()]?.let { return it }
+        var created = false
+        val handler = playerMap.computeIfAbsent(uuid()) {
+            // オフラインのプレイヤー（退出後など）には注入しない。例外ならマップにも残らない。
+            check(online()) { "${name()} is offline." }
+            created = true
+            PLATFORM.nms().inject(this)
+        }
+        // 皮膚の取得は、登録した時の1回だけ起動する。
+        if (created) SkinManagerImpl.complete(handler.base().profile().asUncompleted())
+        return handler
     }
 
     override fun reload(pipeline: ReloadPipeline, zipper: PackZipper) {

@@ -28,4 +28,12 @@ public interface PlatformPlayer extends PlatformLivingEntity, PlatformOfflinePla
      */
     @Override
     @NotNull String name();
+
+    /**
+     * プレイヤーが現在オンラインかどうかを返す。
+     *
+     * @return オンラインなら true
+     * @since 2.0.0
+     */
+    boolean online();
 }

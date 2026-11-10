@@ -22,9 +22,18 @@ import java.util.*
 object ProfileManagerImpl : ProfileManager, GlobalManager {
 
     private val gson = GsonBuilder().create()
-    private lateinit var supplier: ModelProfileSupplier
 
-    override fun supplier(): ModelProfileSupplier = supplier
+    /**
+     * 組み込みの supplier。互換フック（SkinsRestorer など）が提供できない時の委譲先でもある。
+     */
+    val defaultSupplier: ModelProfileSupplier by lazy {
+        if (PLATFORM.nms().isProxyOnlineMode) DefaultHttpModelProfileSupplier() else HttpModelProfileSupplier()
+    }
+
+    @Volatile
+    private var supplier: ModelProfileSupplier? = null
+
+    override fun supplier(): ModelProfileSupplier = supplier ?: defaultSupplier
 
     override fun supplier(supplier: ModelProfileSupplier) {
         this.supplier = supplier
@@ -52,7 +61,7 @@ object ProfileManagerImpl : ProfileManager, GlobalManager {
 
     private data class ProfileSkin(
         val url: String,
-        val metadata: ProfileMetadata
+        val metadata: ProfileMetadata?
     ) {
         fun toURI(): URI = URI.create(url)
     }
@@ -64,7 +73,8 @@ object ProfileManagerImpl : ProfileManager, GlobalManager {
     }
 
     override fun start() {
-        supplier = if (PLATFORM.nms().isProxyOnlineMode) DefaultHttpModelProfileSupplier() else HttpModelProfileSupplier()
+        // ここより前にフックが登録した supplier は上書きしない。
+        if (supplier == null) supplier = defaultSupplier
     }
 
     override fun reload(pipeline: ReloadPipeline, zipper: PackZipper) {

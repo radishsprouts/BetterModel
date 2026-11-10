@@ -23,6 +23,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
+import java.time.Duration
 import java.util.concurrent.TimeUnit
 
 val PLATFORM
@@ -61,7 +62,15 @@ fun <T : Any> httpClient(block: HttpClient.() -> T): HttpUtil.Result<T> = HttpUt
     it.block()
 }
 
-fun buildHttpRequest(builder: HttpRequest.Builder.() -> Unit): HttpRequest = HttpRequest.newBuilder().apply(builder).build()
+/**
+ * HTTP 要求の既定のタイムアウト。呼び出し側は builder の中で上書きできる。
+ */
+private val HTTP_REQUEST_TIMEOUT = Duration.ofSeconds(30)
+
+fun buildHttpRequest(builder: HttpRequest.Builder.() -> Unit): HttpRequest = HttpRequest.newBuilder()
+    .timeout(HTTP_REQUEST_TIMEOUT)
+    .apply(builder)
+    .build()
 
 
 fun <T> HttpResponse<InputStream>.toJson(clazz: Class<T>): T = body().use {
