@@ -85,12 +85,12 @@ public final class MathUtil {
     /**
      * Squared vector comparison epsilon value
      */
-    public static final float VECTOR_COMPARISON_EPSILON_SQ = 1E-8F;
+    public static final float VECTOR_COMPARISON_EPSILON_SQ = 1E-6F;
 
     /**
      * Quaternion comparison epsilon value
      */
-    public static final float QUATERNION_COMPARISON_EPSILON = 1E-5F;
+    public static final float QUATERNION_COMPARISON_EPSILON = 1E-4F;
 
     private static final Vector3f ZERO_VECTOR = new Vector3f();
 

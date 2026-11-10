@@ -57,7 +57,7 @@ public final class TrackerBundlerSet {
      */
     void send() {
         if (tickBundler.isNotEmpty()) {
-            pipeline.forEachAllPlayer(tickBundler::send);
+            pipeline.forEachViewedPlayer(tickBundler::send);
             tickBundler = pipeline.createBundler();
         }
         if (dataBundler.isNotEmpty()) {

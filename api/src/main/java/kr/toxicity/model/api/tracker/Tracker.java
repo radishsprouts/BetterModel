@@ -53,7 +53,8 @@ import java.util.stream.Stream;
  */
 public sealed abstract class Tracker implements AutoCloseable permits EntityTracker, DummyTracker {
 
-    private static final ScheduledExecutorService EXECUTOR = Executors.newScheduledThreadPool(Runtime.getRuntime().availableProcessors() * 2, new ThreadFactory() {
+    private static final int SHARD_COUNT = Math.max(1, Runtime.getRuntime().availableProcessors() * 2);
+    private static final ScheduledExecutorService EXECUTOR = Executors.newScheduledThreadPool(SHARD_COUNT, new ThreadFactory() {
 
         private final AtomicInteger integer = new AtomicInteger();
 
@@ -66,6 +67,82 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
             return thread;
         }
     });
+
+    private static final class TrackerShard {
+        private final Set<Tracker> trackers = ConcurrentHashMap.newKeySet();
+
+        private TrackerShard() {
+            EXECUTOR.scheduleAtFixedRate(this::tickAll, TRACKER_TICK_INTERVAL, TRACKER_TICK_INTERVAL, TimeUnit.MILLISECONDS);
+        }
+
+        private void tickAll() {
+            for (Tracker tracker : trackers) {
+                try {
+                    if (tracker.playerCount() == 0 && !tracker.forRemoval.get()) {
+                        tracker.shutdown();
+                        continue;
+                    }
+                    tracker.frame++;
+                    tracker.tick();
+                } catch (Throwable t) {
+                    LogUtil.handleException("Exception occurred while ticking tracker: " + tracker.name(), t);
+                }
+            }
+        }
+    }
+
+    private static final TrackerShard[] SHARDS = new TrackerShard[SHARD_COUNT];
+    static {
+        for (int i = 0; i < SHARD_COUNT; i++) {
+            SHARDS[i] = new TrackerShard();
+        }
+    }
+
+    private TrackerShard shard() {
+        return SHARDS[Math.floorMod(System.identityHashCode(this), SHARD_COUNT)];
+    }
+
+    private static final class SightCache {
+        private long lastCheckFrame = -1;
+        private boolean lastResult;
+        private double lastPlayerX, lastPlayerY, lastPlayerZ;
+        private double lastTargetX, lastTargetY, lastTargetZ;
+
+        boolean canSee(long currentFrame, PlatformPlayer player, PlatformLocation targetLoc) {
+            var playerEye = player.eyeLocation();
+            var px = playerEye.x();
+            var py = playerEye.y();
+            var pz = playerEye.z();
+            var tx = targetLoc.x();
+            var ty = targetLoc.y();
+            var tz = targetLoc.z();
+
+            if (lastCheckFrame >= 0 && (currentFrame - lastCheckFrame) < 8) {
+                var dpx = px - lastPlayerX;
+                var dpy = py - lastPlayerY;
+                var dpz = pz - lastPlayerZ;
+                var dtx = tx - lastTargetX;
+                var dty = ty - lastTargetY;
+                var dtz = tz - lastTargetZ;
+                if ((dpx * dpx + dpy * dpy + dpz * dpz + dtx * dtx + dty * dty + dtz * dtz) < 0.04) {
+                    return lastResult;
+                }
+            }
+
+            lastCheckFrame = currentFrame;
+            lastPlayerX = px;
+            lastPlayerY = py;
+            lastPlayerZ = pz;
+            lastTargetX = tx;
+            lastTargetY = ty;
+            lastTargetZ = tz;
+            lastResult = EntityUtil.canSee(playerEye, targetLoc);
+            return lastResult;
+        }
+    }
+
+    private final Map<UUID, SightCache> sightCaches = new ConcurrentHashMap<>();
+    private final AtomicBoolean scheduled = new AtomicBoolean();
     /**
      * The interval in milliseconds between tracker ticks.
      * @since 1.15.2
@@ -133,7 +210,7 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
         this.modifier = modifier;
         this.animationTicker = new TrackerAnimationTicker(pipeline);
         this.bundlerSet = new TrackerBundlerSet(pipeline);
-        if (modifier.sightTrace()) pipeline.viewFilter(p -> EntityUtil.canSee(p.eyeLocation(), location()));
+        if (modifier.sightTrace()) pipeline.viewFilter(p -> sightCaches.computeIfAbsent(p.uuid(), _ -> new SightCache()).canSee(frame, p, location()));
         frame(set -> {
             if (readyForForceUpdate.compareAndSet(true, false)) pipeline.forEach(b -> b.dirtyUpdate(set.dataBundler()));
         });
@@ -167,38 +244,32 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
      * @since 1.15.2
      */
     public boolean isScheduled() {
-        var currentTask = task;
-        return currentTask != null && !currentTask.isCancelled();
+        return scheduled.get();
     }
 
     private void start() {
-        if (isScheduled()) return;
+        if (scheduled.get()) return;
         synchronized (this) {
-            if (isScheduled()) return;
-            if (firstStart.compareAndSet(false, true)) {
-                TrackerBuiltInAnimation.play(this);
-            }
-            tick();
-            task = EXECUTOR.scheduleAtFixedRate(() -> {
-                if (playerCount() == 0 && !forRemoval.get()) {
-                    shutdown();
-                    return;
+            if (scheduled.compareAndSet(false, true)) {
+                if (firstStart.compareAndSet(false, true)) {
+                    TrackerBuiltInAnimation.play(this);
                 }
-                frame++;
                 tick();
-            }, TRACKER_TICK_INTERVAL, TRACKER_TICK_INTERVAL, TimeUnit.MILLISECONDS);
-            LogUtil.debug(DebugConfig.DebugOption.TRACKER, () -> getClass().getSimpleName() + " scheduler started: " + name());
+                shard().trackers.add(this);
+                LogUtil.debug(DebugConfig.DebugOption.TRACKER, () -> getClass().getSimpleName() + " scheduler started: " + name());
+            }
         }
     }
 
     private void shutdown() {
-        if (!isScheduled()) return;
+        if (!scheduled.get()) return;
         synchronized (this) {
-            if (!isScheduled()) return;
-            task.cancel(true);
-            task = null;
-            frame = 0;
-            LogUtil.debug(DebugConfig.DebugOption.TRACKER, () -> getClass().getSimpleName() + " scheduler shutdown: " + name());
+            if (scheduled.compareAndSet(true, false)) {
+                shard().trackers.remove(this);
+                frame = 0;
+                sightCaches.clear();
+                LogUtil.debug(DebugConfig.DebugOption.TRACKER, () -> getClass().getSimpleName() + " scheduler shutdown: " + name());
+            }
         }
     }
 
@@ -221,7 +292,7 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
     private void animationTick() {
         if (tickPause.get()) return; // Pause
         scriptProcessor.tick();
-        animationTicker.tick();
+        animationTicker.tick(frame, location());
     }
 
     /**
