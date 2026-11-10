@@ -27,8 +27,12 @@ class BetterModelEventBusImpl(
     private val subscribers = ConcurrentHashMap<Class<*>, BusManager>()
 
     override fun <T : ModelEvent> subscribe(application: ModelEventApplication, eventClass: Class<T>, consumer: Consumer<T>): ModelEventListener {
-        return subscribers.computeIfAbsent(eventClass) { BusManager(it) }
-            .register(application, consumer)
+        // 空になった BusManager の削除（invoke 側の compute）と登録が競合しないよう、同じ表の compute の中で登録する
+        var listener = ModelEventListener.NONE
+        subscribers.compute(eventClass) { _, manager ->
+            (manager ?: BusManager(eventClass)).also { listener = it.register(application, consumer) }
+        }
+        return listener
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -57,15 +61,21 @@ class BetterModelEventBusImpl(
         }
 
         override fun invoke(p1: ModelEvent) {
-            synchronized(this) {
-                map.entries.removeIf { (application, registry) ->
-                    !application.isEnabled || runCatching {
-                        registry(p1)
-                    }.handleFailure {
-                        "Unable to pass this event: ${clazz.simpleName}"
-                    }.isFailure
+            var removed = false
+            map.entries.removeIf { (application, registry) ->
+                if (!application.isEnabled) {
+                    removed = true
+                    true
+                } else {
+                    // 購読者の例外は ListenerRegistry 側で購読者ごとに記録される。購読は外さない
+                    registry(p1)
+                    false
                 }
-                if (map.isEmpty()) subscribers.remove(clazz, this)
+            }
+            if (removed && map.isEmpty()) {
+                subscribers.computeIfPresent(clazz) { _, manager ->
+                    if (manager === this && map.isEmpty()) null else manager
+                }
             }
         }
     }
@@ -80,7 +90,11 @@ class BetterModelEventBusImpl(
         override fun invoke(p1: ModelEvent) {
             lock.accessToReadLock {
                 map.values.forEach { consumer ->
-                    (consumer as Consumer<ModelEvent>).accept(p1)
+                    runCatching {
+                        (consumer as Consumer<ModelEvent>).accept(p1)
+                    }.handleFailure {
+                        "Unable to pass this event: ${p1.javaClass.simpleName}"
+                    }
                 }
             }
         }

@@ -9,7 +9,7 @@ dependencies {
 
     shade(project(":purpur"))
     rootProject.project("nms").subprojects.forEach {
-        compileOnly(it)
+        compileOnly(project(it.path))
     }
 
     shade(libs.bundles.shadedLibrary) {

@@ -30,10 +30,20 @@ import kotlin.io.path.extension
 
 object ModelManagerImpl : ModelManager, GlobalManager {
 
-    private val generalModelMap = addressingMapOf<String, ModelRenderer>()
-    private val generalModelView = generalModelMap.toImmutableView()
-    private val playerModelMap = addressingMapOf<String, ModelRenderer>()
-    private val playerModelView = playerModelMap.toImmutableView()
+    /**
+     * リロードで作り直す表の組。完成してから [tables] を1回の代入で差し替えるので、
+     * 読む側はリロード中でも途中の（空の）表を見ない。
+     */
+    private class Tables(
+        val generalMap: MutableMap<String, ModelRenderer> = addressingMapOf(),
+        val playerMap: MutableMap<String, ModelRenderer> = addressingMapOf()
+    ) {
+        val generalView = generalMap.toImmutableView()
+        val playerView = playerMap.toImmutableView()
+    }
+
+    @Volatile
+    private var tables = Tables()
     private val modelExtensions = setOf("bbmodel", "ajmodel")
 
     private fun importModels(
@@ -89,10 +99,10 @@ object ModelManagerImpl : ModelManager, GlobalManager {
             }
     }
 
-    private fun loadModels(pipeline: ReloadPipeline, zipper: PackZipper) {
-        ModelPipeline(zipper).use {
-            if (CONFIG.module().model) it.addModelTo(
-                generalModelMap,
+    private fun loadModels(pipeline: ReloadPipeline, zipper: PackZipper, tables: Tables) {
+        ModelPipeline(zipper).run {
+            if (CONFIG.module().model) addModelTo(
+                tables.generalMap,
                 importModels(ModelRenderer.Type.GENERAL, pipeline, DATA_FOLDER.getOrCreateDirectory("models") { folder ->
                     File(DATA_FOLDER.parent, "ModelEngine/blueprints")
                         .takeIf(File::isDirectory)
@@ -105,8 +115,8 @@ object ModelManagerImpl : ModelManager, GlobalManager {
                     }
                 })
             )
-            if (CONFIG.module().playerAnimation) it.addModelTo(
-                playerModelMap,
+            if (CONFIG.module().playerAnimation) addModelTo(
+                tables.playerMap,
                 importModels(ModelRenderer.Type.PLAYER, pipeline, DATA_FOLDER.getOrCreateDirectory("players") { folder ->
                     folder.addResource("steve.bbmodel")
                 })
@@ -122,14 +132,13 @@ object ModelManagerImpl : ModelManager, GlobalManager {
 
     private class ModelPipeline(
         private val zipper: PackZipper
-    ) : AutoCloseable {
+    ) {
 
         private val textures = zipper.assets().bettermodel().textures()
 
         private val modernModel = ModelBuilder(
             namespace = zipper.assets().obfuscate("model"),
             builder = { zipper.assets().bettermodel().models().resolve(namespace) },
-            available = true,
             onBuild = { name, blueprints, json, size ->
                 items.add(name, size) {
                     jsonObjectOf("model" to blueprints.toModernJson(namespace, json)).toByteArray()
@@ -141,9 +150,6 @@ object ModelManagerImpl : ModelManager, GlobalManager {
                 }
             }
         )
-
-        override fun close() {
-        }
 
         fun addModelTo(
             targetMap: MutableMap<String, ModelRenderer>,
@@ -160,7 +166,7 @@ object ModelManagerImpl : ModelManager, GlobalManager {
             val context = blueprint.context()
             targetMap[blueprint.name] = blueprint.toRenderer(type) render@ { group ->
                 if (!context.canBeRendered()) return@render null
-                modernModel.ifAvailable {
+                modernModel.run {
                     val json = group.buildModernJson(obfuscator, context)
                     val itemModel = group.buildMeshItemModel(context)
                     if (json != null || itemModel != null) {
@@ -193,16 +199,11 @@ object ModelManagerImpl : ModelManager, GlobalManager {
         inner class ModelBuilder(
             val namespace: String,
             val builder: ModelBuilder.() -> PackBuilder,
-            private val available: Boolean,
             private val onBuild: ModelBuilder.(String, List<BlueprintJson>, JsonObject?, Long) -> Unit,
         ) {
             val items = zipper.assets().bettermodel().items().resolve(namespace)
             val models = builder()
             val obfuscator = textures.obfuscator().withModels(models.obfuscator())
-
-            inline fun <T> ifAvailable(block: ModelBuilder.() -> T): T? {
-                return if (available) block() else null
-            }
 
             fun build(name: String, list: List<BlueprintJson>, json: JsonObject?, size: Long) {
                 onBuild(name, list, json, size)
@@ -252,19 +253,17 @@ object ModelManagerImpl : ModelManager, GlobalManager {
         }
     }
 
-    override fun start() {
-    }
-
     override fun reload(pipeline: ReloadPipeline, zipper: PackZipper) {
-        generalModelMap.clear()
-        playerModelMap.clear()
-        loadModels(pipeline, zipper)
+        // 新しい表に作ってから差し替える。失敗した時は古い表がそのまま残る
+        val newTables = Tables()
+        loadModels(pipeline, zipper, newTables)
+        tables = newTables
     }
 
-    override fun model(name: String): ModelRenderer? = generalModelView[name]
-    override fun models(): Collection<ModelRenderer> = generalModelView.values
-    override fun modelKeys(): Set<String> = generalModelView.keys
-    override fun limb(name: String): ModelRenderer? = playerModelView[name]
-    override fun limbs(): Collection<ModelRenderer> = playerModelView.values
-    override fun limbKeys(): Set<String> = playerModelView.keys
+    override fun model(name: String): ModelRenderer? = tables.generalView[name]
+    override fun models(): Collection<ModelRenderer> = tables.generalView.values
+    override fun modelKeys(): Set<String> = tables.generalView.keys
+    override fun limb(name: String): ModelRenderer? = tables.playerView[name]
+    override fun limbs(): Collection<ModelRenderer> = tables.playerView.values
+    override fun limbKeys(): Set<String> = tables.playerView.keys
 }
