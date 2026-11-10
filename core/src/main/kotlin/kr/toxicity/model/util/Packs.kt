@@ -36,7 +36,7 @@ interface PackGenerator {
     fun create(zipper: PackZipper, pipeline: ReloadPipeline): PackResult
 
     /**
-     * Checks whether the pack differs from the last completed build. This never writes the hash.
+     * パックが前回完了したビルドと違うかを調べます。ハッシュは書き込みません。
      */
     fun hashChanged(result: PackResult): Boolean {
         if (!exists) return true
@@ -45,8 +45,8 @@ interface PackGenerator {
     }
 
     /**
-     * Records the hash. It must be called only after the pack has been completely written,
-     * otherwise a failed build would never be retried.
+     * ハッシュを記録します。パックをすべて書き終えた後にだけ呼ぶこと。
+     * そうしないと、失敗したビルドが再試行されません。
      */
     fun writeHash(result: PackResult) {
         val file = hashFile()
@@ -127,7 +127,7 @@ class ZipGenerator : PackGenerator {
         val changed = hashChanged(result)
         result.freeze(changed)
         if (!changed) return result
-        // The zip is written to a temporary file and moved afterwards so an interrupted build never leaves a broken zip.
+        // ZIP は一時ファイルへ書いてから移す。ビルドが途中で止まっても壊れた ZIP が残らない。
         val temp = Files.createTempFile(file.absoluteFile.parentFile.toPath(), file.nameWithoutExtension, ".tmp")
         try {
             ZipOutputStream(temp.outputStream().buffered()).use { zip ->
@@ -138,7 +138,7 @@ class ZipGenerator : PackGenerator {
                     val bytes = packByte.bytes()
                     val entry = ZipEntry(name)
                     if (name.endsWith(".png", ignoreCase = true)) {
-                        // PNG is already compressed, so deflating it again only wastes CPU.
+                        // PNG は圧縮済みなので、もう一度圧縮しても CPU の無駄になる。
                         entry.method = ZipEntry.STORED
                         entry.size = bytes.size.toLong()
                         entry.compressedSize = bytes.size.toLong()

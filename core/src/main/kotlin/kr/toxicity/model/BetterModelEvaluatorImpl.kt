@@ -16,8 +16,8 @@ class BetterModelEvaluatorImpl : BetterModelEvaluator {
 
     private val molang = MolangCompiler.create(MolangCompiler.DEFAULT_FLAGS, javaClass.classLoader)
 
-    // A runtime is reused per thread. Its variable storage is mutable, so it is cleared on every evaluation
-    // to behave exactly like a freshly created runtime.
+    // runtime はスレッドごとに使い回す。変数の保存先は書き換え可能なので、
+    // 毎回の評価で空にして、作り直した runtime と同じ結果になるようにする。
     private val runtime = ThreadLocal.withInitial { MolangRuntime.runtime().create() }
 
     private fun Float.query(): MolangRuntime = runtime.get().apply {

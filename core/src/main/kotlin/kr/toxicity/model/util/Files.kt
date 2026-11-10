@@ -27,8 +27,8 @@ inline fun File.getOrCreateDirectory(name: String, initialConsumer: (File) -> Un
 fun File.subFiles(): List<File> = listFiles()?.toList() ?: emptyList()
 
 /**
- * Moves a completed temporary file onto its final path so that readers never see a half-written file.
- * An atomic move is used when the file system supports it.
+ * 書き終えた一時ファイルを最終のパスへ移し、書きかけのファイルが読まれないようにします。
+ * ファイルシステムが対応していれば、アトミックな移動を使います。
  */
 fun moveReplacing(source: Path, target: Path) {
     try {

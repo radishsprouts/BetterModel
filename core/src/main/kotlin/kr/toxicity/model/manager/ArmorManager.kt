@@ -32,8 +32,8 @@ object ArmorManager : GlobalManager {
     private const val ARMOR_PALETTE_PATH = "assets/minecraft/textures/palettes/trim"
 
     /**
-     * A file written after every armor asset has been extracted. It stores the Minecraft version the assets were taken from,
-     * so an interrupted download is retried and a server update refreshes the assets.
+     * 防具素材をすべて取り出した後に書くファイル。素材の取得元の Minecraft の版を保存するので、
+     * 途中で止まった取得は再試行され、サーバーの更新後は素材が取り直される。
      */
     private const val COMPLETE_MARKER = ".complete"
     private const val DOWNLOAD_TIMEOUT_MINUTES = 5L
@@ -128,7 +128,7 @@ object ArmorManager : GlobalManager {
     )
 
     /**
-     * The Minecraft version id used by the version manifest (a patch of 0 is not written, like "26.1").
+     * バージョン一覧（manifest）で使う Minecraft の版 id。patch が 0 の時は書かない（例: "26.1"）。
      */
     private fun serverVersionId() = PLATFORM.version().run {
         if (patch == 0) "$major.$minor" else "$major.$minor.$patch"
@@ -243,7 +243,7 @@ object ArmorManager : GlobalManager {
                     { image -> image.second.size.toLong() },
                 ) { image -> File(palettesFile, "${image.first}.png").writeBytes(image.second) }
             }
-            // The marker is written last: an unfinished download has no marker and is retried on the next reload.
+            // 完了印は最後に書く。取得が途中なら印が無いので、次のリロードで再試行される。
             File(folder, COMPLETE_MARKER).writeText(versionId)
             info("Download success!".toComponent(NamedTextColor.LIGHT_PURPLE))
         }.handleFailure {

@@ -103,8 +103,8 @@ public record PackMeta(
      *
      * @param packFormat the pack format version
      * @param description the pack description
-     * @param supportedFormats the legacy range of supported formats (null to omit; it is only allowed when
-     *                         the pack also supports clients older than 1.21.9, which BetterModel no longer does)
+     * @param supportedFormats 旧形式の対応範囲（null なら出力しない。1.21.9 より古いクライアントにも対応する
+     *                         パックでだけ記述でき、BetterModel はもう対応していない）
      * @param minFormat the minimum supported format (>= 1.21.9)
      * @param maxFormat the maximum supported format
      * @since 1.15.2
@@ -169,14 +169,14 @@ public record PackMeta(
     /**
      * Represents a single entry in the overlays list.
      *
-     * @param formats the range of formats this overlay applies to (removed in 1.21.9, null to omit)
+     * @param formats the range of formats this overlay applies to （1.21.9 で廃止。null なら出力しない）
      * @param directory the directory name for the overlay
      * @param minFormat the minimum format (>= 1.21.9)
      * @param maxFormat the maximum format
      * @since 1.15.2
      */
     public record OverlayEntry(
-        @Nullable VersionRange formats, //Removed in 1.21.9
+        @Nullable VersionRange formats, //1.21.9 で廃止
         @NotNull String directory,
         @SerializedName("min_format") @NotNull PackVersion minFormat, //>=1.21.9
         @SerializedName("max_format") @NotNull PackVersion maxFormat
@@ -248,7 +248,7 @@ public record PackMeta(
         private int format = BetterModel.nms().version().getMetaVersion();
         private String description = "BetterModel's default pack.";
         private final List<OverlayEntry> entries = new ArrayList<>();
-        private VersionRange supportedFormats = null; //Not allowed for packs that only target >=1.21.9
+        private VersionRange supportedFormats = null; //1.21.9 以降だけが対象のパックでは記述できない
         private PackVersion minFormat = new PackVersion(NMSVersion.first().getMetaVersion());
         private PackVersion maxFormat = new PackVersion(NMSVersion.latest().getMetaVersion());
 
@@ -289,7 +289,7 @@ public record PackMeta(
         }
 
         /**
-         * Sets the legacy supported formats range (null to omit it).
+         * 旧形式の対応範囲を設定します（null なら出力しません）。
          *
          * @param range the version range
          * @return this builder

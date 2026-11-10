@@ -15,7 +15,7 @@ import org.jetbrains.annotations.NotNull;
  * Enumerates supported Minecraft server versions and their associated metadata.
  * <p>
  * This enum maps internal version identifiers to Minecraft versions and resource pack formats.
- * Only Minecraft 26.1 and later are supported (resource pack format 84 and above).
+ * 対応するのは Minecraft 26.1 以降（リソースパック形式 84 以上）だけです。
  * </p>
  *
  * @since 1.15.2
