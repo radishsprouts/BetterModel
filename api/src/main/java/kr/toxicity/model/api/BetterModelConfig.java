@@ -206,6 +206,50 @@ public interface BetterModelConfig {
     int packetBundlingSize();
 
     /**
+     * Checks if the level of detail (LOD) for animation packets is enabled.
+     * <p>
+     * If enabled, players far from a model receive its animation packets less often
+     * (the interpolation duration is extended to cover the skipped frames).
+     * </p>
+     *
+     * @return true if enabled
+     * @since 3.7.0
+     */
+    boolean animationLod();
+
+    /**
+     * Returns the distance in blocks where the animation packet rate starts to be reduced by {@link #animationLodNearStep()}.
+     *
+     * @return the near distance
+     * @since 3.7.0
+     */
+    double animationLodNearDistance();
+
+    /**
+     * Returns the distance in blocks where the animation packet rate is reduced by {@link #animationLodFarStep()}.
+     *
+     * @return the far distance
+     * @since 3.7.0
+     */
+    double animationLodFarDistance();
+
+    /**
+     * Returns how many tracker frames (25ms) are put together into one packet between the near and far distance.
+     *
+     * @return the near step (1 or more)
+     * @since 3.7.0
+     */
+    int animationLodNearStep();
+
+    /**
+     * Returns how many tracker frames (25ms) are put together into one packet beyond the far distance.
+     *
+     * @return the far step (1 or more)
+     * @since 3.7.0
+     */
+    int animationLodFarStep();
+
+    /**
      * Checks if strict loading mode is enabled.
      * <p>
      * Strict loading causes the platform to fail fast on model loading errors.

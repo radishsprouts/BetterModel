@@ -30,7 +30,6 @@ import kr.toxicity.model.api.util.collection.SingletonSequencedSet;
 import kr.toxicity.model.api.util.function.BonePredicate;
 import kr.toxicity.model.api.util.function.FloatConstantSupplier;
 import kr.toxicity.model.api.util.function.FloatSupplier;
-import kr.toxicity.model.api.util.lock.DuplexLock;
 import lombok.Getter;
 import lombok.Setter;
 import org.jetbrains.annotations.ApiStatus;
@@ -46,6 +45,7 @@ import java.util.SequencedSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.StampedLock;
 import java.util.function.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -361,8 +361,34 @@ public final class RenderedBone implements BoneEventHandler {
         if (d != null) d.sendEntityData(!d.invisible(), bundler);
     }
 
+    /**
+     * Sends the transformation of the given state if it has been changed since the last call.
+     * Used by per-player animation, which is not throttled.
+     * @param uuid player uuid (null for the global state)
+     * @param bundler bundler
+     */
     public void sendTransformation(@Nullable UUID uuid, @NotNull AnimationBundler bundler) {
-        state(uuid).sendTransformation(bundler);
+        var handler = state(uuid);
+        if (handler.syncCurrent(0L)) handler.emitTransformation(0, bundler);
+    }
+
+    /**
+     * Applies the latest keyframe of the global state to the current movement, without creating any packet.
+     * @param version monotonic version number given by the ticker
+     * @return the movement has been changed or not
+     */
+    public boolean syncTransformation(long version) {
+        return globalState.syncCurrent(version);
+    }
+
+    /**
+     * Sends the latest transformation of the global state if it has been changed after the given version.
+     * @param sinceVersion the last version that the receiver already has
+     * @param minDuration minimum interpolation duration in ticks (to cover skipped frames)
+     * @param bundler bundler
+     */
+    public void sendTransformation(long sinceVersion, int minDuration, @NotNull AnimationBundler bundler) {
+        if (globalState.changedVersion > sinceVersion) globalState.emitTransformation(minDuration, bundler);
     }
 
     public void forceTransformation(@NotNull PacketBundler bundler) {
@@ -579,6 +605,7 @@ public final class RenderedBone implements BoneEventHandler {
         private final AnimationStateHandler<AnimationProgress> state;
         private final BoneMovement before = new BoneMovement(), after = new BoneMovement(), current = new BoneMovement();
         private final DisplayTransformer transformer = display != null ? display.createTransformer() : null;
+        private volatile long changedVersion = 0L;
 
         //Flags
         private boolean firstTick = true;
@@ -590,8 +617,8 @@ public final class RenderedBone implements BoneEventHandler {
         private final Vector3f positionCache = new Vector3f(), scaleCache = new Vector3f();
         private final Quaternionf localRotCache = new Quaternionf(), globalRotCache = new Quaternionf();
 
-        //Lock
-        private final DuplexLock lock = new DuplexLock();
+        //Lock (before / current)
+        private final StampedLock lock = new StampedLock();
 
         private BoneStateHandler(@Nullable UUID uuid, @NotNull Consumer<UUID> consumer) {
             this.uuid = uuid;
@@ -638,7 +665,12 @@ public final class RenderedBone implements BoneEventHandler {
                 }
             }) || firstTick;
             if (result && updateAfter.compareAndSet(false, true)) {
-                lock.accessToWriteLock(() -> before.set(current));
+                var stamp = lock.writeLock();
+                try {
+                    before.set(current);
+                } finally {
+                    lock.unlockWrite(stamp);
+                }
                 updateCurrent.set(true);
             }
             firstTick = false;
@@ -655,14 +687,26 @@ public final class RenderedBone implements BoneEventHandler {
             return Math.round(frame + MathUtil.FLOAT_COMPARISON_EPSILON);
         }
 
-        private void sendTransformation(@NotNull AnimationBundler bundler) {
-            if (!updateCurrent.compareAndSet(true, false)) return;
+        private boolean syncCurrent(long version) {
+            if (!updateCurrent.compareAndSet(true, false)) return false;
             var after = after();
-            var movement = lock.accessToWriteLock(() -> current.set(after));
+            var stamp = lock.writeLock();
+            try {
+                current.set(after);
+            } finally {
+                lock.unlockWrite(stamp);
+            }
+            changedVersion = version;
+            return true;
+        }
+
+        private void emitTransformation(int minDuration, @NotNull AnimationBundler bundler) {
             if (transformer == null) return;
+            var movement = current;
             var mul = scale.getAsFloat();
+            var duration = interpolationDuration();
             transformer.transform(
-                interpolationDuration(),
+                skipInterpolation ? 0 : Math.max(duration, minDuration),
                 MathUtil.fma(
                     itemStack.offset().rotate(movement.rotation(), positionCache)
                         .add(movement.position())
@@ -681,7 +725,7 @@ public final class RenderedBone implements BoneEventHandler {
 
         private @NotNull Vector3f worldPosition(@NotNull BonePosition position, @NotNull BoneMovement cache) {
             var progress = progress();
-            var interpolated = lock.accessToReadLock(() -> updateCurrent.get() ? cache.set(current) : before.lerp(current, progress, cache));
+            var interpolated = interpolate(progress, cache);
             return MathUtil.fma(
                     interpolated.position()
                         .add(itemStack.offset())
@@ -696,9 +740,30 @@ public final class RenderedBone implements BoneEventHandler {
                 .rotateY(-rotation.radianY());
         }
 
+        private @NotNull BoneMovement interpolate(float progress, @NotNull BoneMovement cache) {
+            // Optimistic read: the cache is overwritten on retry, so a torn read is never exposed.
+            var stamp = lock.tryOptimisticRead();
+            var result = updateCurrent.get() ? cache.set(current) : before.lerp(current, progress, cache);
+            if (lock.validate(stamp)) return result;
+            stamp = lock.readLock();
+            try {
+                return updateCurrent.get() ? cache.set(current) : before.lerp(current, progress, cache);
+            } finally {
+                lock.unlockRead(stamp);
+            }
+        }
+
         private @NotNull Vector3f worldRotation() {
             var progress = progress();
-            return lock.accessToReadLock(() -> InterpolationUtil.lerp(before.rawRotation(), current.rawRotation(), progress));
+            var stamp = lock.tryOptimisticRead();
+            var result = InterpolationUtil.lerp(before.rawRotation(), current.rawRotation(), progress);
+            if (lock.validate(stamp)) return result;
+            stamp = lock.readLock();
+            try {
+                return InterpolationUtil.lerp(before.rawRotation(), current.rawRotation(), progress);
+            } finally {
+                lock.unlockRead(stamp);
+            }
         }
     }
 

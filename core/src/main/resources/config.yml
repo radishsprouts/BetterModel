@@ -94,6 +94,19 @@ player-hide-delay: 3
 # Higher values can reduce network overhead but may increase perceived latency. 0 to disable.
 packet-bundling-size: 16
 
+# Reduces the animation packets sent to players far from a model (level of detail).
+# A skipped frame is not lost: the next packet is interpolated over the skipped time.
+animation-lod: true
+
+# Distance in blocks where the packet rate starts to be reduced, and the number of tracker frames (25ms each)
+# put together into one packet there. 2 means half the packets.
+animation-lod-near-distance: 16
+animation-lod-near-step: 2
+
+# Distance in blocks where the packet rate is reduced further, and the step there. 4 means a quarter of the packets.
+animation-lod-far-distance: 32
+animation-lod-far-step: 4
+
 # Enables strict loading mode. If true, the plugin will fail to load models with unsupported features.
 # If false, it will attempt to load them by ignoring unsupported parts, which may cause visual issues.
 enable-strict-loading: false

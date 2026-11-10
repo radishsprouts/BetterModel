@@ -7,11 +7,11 @@
 
 package kr.toxicity.model.api.util.function;
 
-import it.unimi.dsi.fastutil.ints.Int2ReferenceOpenHashMap;
 import kr.toxicity.model.api.util.MathUtil;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
@@ -53,7 +53,7 @@ public interface FloatFunction<T> {
      * @return memoized function
      */
     default @NotNull FloatFunction<T> memoize() {
-        var map = new Int2ReferenceOpenHashMap<T>();
+        var map = new ConcurrentHashMap<Integer, T>();
         return f -> map.computeIfAbsent(MathUtil.similarHashCode(f), _ -> apply(f));
     }
 }

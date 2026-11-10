@@ -90,7 +90,7 @@ public final class MathUtil {
     /**
      * Quaternion comparison epsilon value
      */
-    public static final float QUATERNION_COMPARISON_EPSILON = 1E-4F;
+    public static final float QUATERNION_COMPARISON_EPSILON = 1E-5F;
 
     private static final Vector3f ZERO_VECTOR = new Vector3f();
 
@@ -171,12 +171,29 @@ public final class MathUtil {
     }
 
     /**
-     * Creates epsilon-based hashcode of given float
+     * Creates epsilon-based hashcode of given float.
+     * <p>
+     * Values are rounded to the nearest epsilon bucket, so that {@link #isSameBucket(float, float)} and this hashcode agree.
+     * </p>
      * @param value value
      * @return hashcode
      */
     public static int similarHashCode(float value) {
-        return (int) (value / FLOAT_COMPARISON_EPSILON);
+        return Math.round(value / FLOAT_COMPARISON_EPSILON);
+    }
+
+    /**
+     * Checks two floats belong to the same epsilon bucket.
+     * <p>
+     * Unlike {@link #isSimilar(float, float)}, this is an equivalence relation, so it can be used
+     * to implement {@code equals} consistently with {@link #similarHashCode(float)}.
+     * </p>
+     * @param a a
+     * @param b b
+     * @return same bucket or not
+     */
+    public static boolean isSameBucket(float a, float b) {
+        return similarHashCode(a) == similarHashCode(b);
     }
 
     /**

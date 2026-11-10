@@ -6,21 +6,26 @@
  */
 
 package kr.toxicity.model.api.tracker;
-import kr.toxicity.model.api.platform.PlatformLocation;
 
+import it.unimi.dsi.fastutil.longs.Long2ReferenceOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import kr.toxicity.model.api.BetterModel;
+import kr.toxicity.model.api.BetterModelConfig;
 import kr.toxicity.model.api.data.renderer.RenderPipeline;
 import kr.toxicity.model.api.nms.AnimationBundler;
 import kr.toxicity.model.api.nms.PlayerChannelHandler;
+import kr.toxicity.model.api.platform.PlatformLocation;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -30,10 +35,15 @@ import java.util.function.Consumer;
  * Manages animation frame updates via the {@link RenderPipeline}, broadcasting animation packets
  * to viewing players and handling isolated per-player animation overrides with reference counting.
  * </p>
+ * <p>
+ * The animation state always advances every frame. Only the packet dispatch is thinned out by the distance of
+ * each player (level of detail): a player far from the model receives the latest pose less often,
+ * and the interpolation duration is extended to cover the skipped frames.
+ * </p>
  * <p>Example:</p>
  * <pre>{@code
  * TrackerAnimationTicker ticker = new TrackerAnimationTicker(pipeline);
- * ticker.tick();
+ * ticker.tick(frame, location);
  * }</pre>
  *
  * @since 3.7.0
@@ -43,8 +53,15 @@ final class TrackerAnimationTicker {
     private final RenderPipeline pipeline;
 
     private final List<PlayerChannelHandler> viewedPlayers = new ObjectArrayList<>();
+    private final Map<UUID, Viewer> viewers = new HashMap<>();
     private final Map<UUID, PerPlayerCache> perPlayerAnimationCache = new ConcurrentHashMap<>();
-    private AnimationBundler animationBundler;
+
+    // Only the tracker's shard thread touches these.
+    private long version = 0L;
+    private long tickStamp = 0L;
+    private final int phase = ThreadLocalRandom.current().nextInt(64);
+
+    private volatile boolean immediate;
 
     /**
      * Constructs a new animation ticker.
@@ -54,56 +71,33 @@ final class TrackerAnimationTicker {
      */
     TrackerAnimationTicker(@NotNull RenderPipeline pipeline) {
         this.pipeline = Objects.requireNonNull(pipeline, "pipeline");
-        this.animationBundler = pipeline.createAnimationBundler();
+    }
+
+    /**
+     * Makes the next tick send the changed pose to every viewer at once, ignoring the level of detail.
+     * Used when an animation is played or stopped by an API call.
+     *
+     * @since 3.7.0
+     */
+    void requestImmediate() {
+        immediate = true;
     }
 
     /**
      * Advances animation playback in the render pipeline and dispatches animation packets to viewers.
      *
-     * @since 3.7.0
-     */
-    void tick() {
-        tick(0, null);
-    }
-
-    /**
-     * Advances animation playback in the render pipeline and dispatches animation packets to viewers with adaptive LOD.
-     *
      * @param frame the current tracker frame
-     * @param targetLoc the current tracker location for distance-based LOD
+     * @param location the current tracker location for distance-based LOD
      * @since 3.7.0
      */
-    void tick(long frame, PlatformLocation targetLoc) {
-        if (!pipeline.tick()) return;
+    void tick(long frame, @NotNull PlatformLocation location) {
+        var forced = immediate;
+        if (forced) immediate = false;
+        var changed = pipeline.tick();
+        if (changed) pipeline.sync(++version);
         recalculateViewedPlayers();
-        if (viewedPlayers.isEmpty() && perPlayerAnimationCache.isEmpty()) return;
-
-        int step = 1;
-        if (targetLoc != null && !viewedPlayers.isEmpty()) {
-            double lx = targetLoc.x();
-            double ly = targetLoc.y();
-            double lz = targetLoc.z();
-            double minDistanceSq = Double.MAX_VALUE;
-            for (PlayerChannelHandler channel : viewedPlayers) {
-                var ploc = channel.player().location();
-                if (!ploc.world().equals(targetLoc.world())) continue;
-                double dx = ploc.x() - lx;
-                double dy = ploc.y() - ly;
-                double dz = ploc.z() - lz;
-                double d = dx * dx + dy * dy + dz * dz;
-                if (d < minDistanceSq) minDistanceSq = d;
-            }
-            if (minDistanceSq >= 1024.0) { // 32 blocks or further
-                step = 4;
-            } else if (minDistanceSq >= 256.0) { // 16 blocks to 32 blocks
-                step = 2;
-            }
-        }
-
-        if (step > 1 && (frame % step != 0)) return;
-        if (!viewedPlayers.isEmpty() || !perPlayerAnimationCache.isEmpty()) {
-            sendAnimation();
-        }
+        sendGlobal(frame, location, forced, changed);
+        if (!perPlayerAnimationCache.isEmpty()) perPlayerAnimationCache.values().forEach(PerPlayerCache::send);
     }
 
     /**
@@ -145,14 +139,70 @@ final class TrackerAnimationTicker {
         });
     }
 
-    private void sendAnimation() {
-        pipeline.send(animationBundler);
-        if (animationBundler.isNotEmpty()) {
-            viewedPlayers.forEach(animationBundler::send);
-            animationBundler = pipeline.createAnimationBundler();
+    private void sendGlobal(long frame, @NotNull PlatformLocation location, boolean forced, boolean changed) {
+        if (viewedPlayers.isEmpty()) {
+            viewers.clear();
+            return;
         }
-        if (perPlayerAnimationCache.isEmpty()) return;
-        perPlayerAnimationCache.values().forEach(PerPlayerCache::send);
+        var config = BetterModel.config();
+        var lod = !forced && config.animationLod();
+        // The distance is calculated once per Minecraft tick.
+        var refresh = forced || frame % Tracker.MINECRAFT_TICK_MULTIPLIER == 0;
+        var stamp = ++tickStamp;
+        Long2ReferenceOpenHashMap<AnimationBundler> bundlers = null;
+        for (PlayerChannelHandler channel : viewedPlayers) {
+            var viewer = viewers.get(channel.uuid());
+            if (viewer == null) {
+                // A new viewer has received the current pose by the spawn packet.
+                viewer = new Viewer(changed ? version - 1 : version);
+                viewers.put(channel.uuid(), viewer);
+                viewer.step = lod ? stepOf(config, channel, location) : 1;
+            } else if (refresh) {
+                viewer.step = lod ? stepOf(config, channel, location) : 1;
+            }
+            viewer.stamp = stamp;
+            if (viewer.sent >= version) continue;
+            var step = viewer.step;
+            if (step > 1 && (frame + phase) % step != 0) continue;
+            var minDuration = step > 1 ? (step + Tracker.MINECRAFT_TICK_MULTIPLIER - 1) / Tracker.MINECRAFT_TICK_MULTIPLIER : 0;
+            var key = (viewer.sent << 16) | (minDuration & 0xFFFF);
+            if (bundlers == null) bundlers = new Long2ReferenceOpenHashMap<>();
+            var bundler = bundlers.get(key);
+            if (bundler == null) {
+                bundler = pipeline.createAnimationBundler();
+                pipeline.send(bundler, viewer.sent, minDuration);
+                bundlers.put(key, bundler);
+            }
+            if (bundler.isNotEmpty()) bundler.send(channel);
+            viewer.sent = version;
+        }
+        if (viewers.size() > viewedPlayers.size()) viewers.values().removeIf(v -> v.stamp != stamp);
+    }
+
+    private static int stepOf(@NotNull BetterModelConfig config, @NotNull PlayerChannelHandler channel, @NotNull PlatformLocation location) {
+        var playerLocation = channel.player().location();
+        if (!playerLocation.world().equals(location.world())) return config.animationLodFarStep();
+        var dx = playerLocation.x() - location.x();
+        var dy = playerLocation.y() - location.y();
+        var dz = playerLocation.z() - location.z();
+        var distanceSquared = dx * dx + dy * dy + dz * dz;
+        var far = config.animationLodFarDistance();
+        if (distanceSquared >= far * far) return config.animationLodFarStep();
+        var near = config.animationLodNearDistance();
+        if (distanceSquared >= near * near) return config.animationLodNearStep();
+        return 1;
+    }
+
+    private static final class Viewer {
+        /** The last version of the pose sent to this viewer. */
+        private long sent;
+        /** Frames to put together into one packet. */
+        private int step = 1;
+        private long stamp;
+
+        private Viewer(long sent) {
+            this.sent = sent;
+        }
     }
 
     @RequiredArgsConstructor
