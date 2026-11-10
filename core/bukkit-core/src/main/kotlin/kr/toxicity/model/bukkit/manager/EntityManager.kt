@@ -24,7 +24,6 @@ import kr.toxicity.model.bukkit.util.registerListener
 import kr.toxicity.model.bukkit.util.wrap
 import kr.toxicity.model.manager.GlobalManager
 import kr.toxicity.model.manager.ReloadPipeline
-import kr.toxicity.model.util.PLATFORM
 import org.bukkit.entity.Entity
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -101,9 +100,8 @@ object EntityManager : GlobalManager {
         fun PlayerQuitEvent.quit() { //Quit
             val wrap = player.wrap()
             BetterModel.registryOrNull(wrap.uuid())?.close()
-            PLATFORM.scheduler().asyncTask {
-                EntityTrackerRegistry.registries { registry -> registry.remove(wrap) }
-            }
+            // 接続は既に切れている。視聴していたレジストリから、パケットを送らずにプレイヤーを外す。
+            EntityTrackerRegistry.forget(wrap.uuid())
             (player.vehicle as? HitBox)?.dismount(wrap)
         }
         @EventHandler(priority = EventPriority.MONITOR)
@@ -160,7 +158,13 @@ object EntityManager : GlobalManager {
     }
 
     override fun reload(pipeline: ReloadPipeline, zipper: PackZipper) {
-        EntityTrackerRegistry.registries(EntityTrackerRegistry::reload)
+        // リロードは非同期スレッドで動くため、各レジストリはそのエンティティを所有するスレッドで作り直す（Folia）。
+        EntityTrackerRegistry.registries { registry ->
+            registry.entity().platform().task(registry::reload) {
+                // エンティティが無くなっている。古いレジストリは閉じる（保存データは残る）ので、エンティティが戻った時に新しいモデルで作り直される。
+                registry.close(TrackerCloseReason.DESPAWN)
+            }
+        }
     }
 
     override fun end() {

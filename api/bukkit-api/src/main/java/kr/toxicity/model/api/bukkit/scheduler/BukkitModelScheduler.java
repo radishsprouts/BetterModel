@@ -10,6 +10,7 @@ package kr.toxicity.model.api.bukkit.scheduler;
 import kr.toxicity.model.api.scheduler.ModelScheduler;
 import kr.toxicity.model.api.scheduler.ModelTask;
 import org.bukkit.Location;
+import org.bukkit.entity.Entity;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -44,4 +45,33 @@ public interface BukkitModelScheduler extends ModelScheduler {
      * @since 2.0.0
      */
     @Nullable ModelTask taskLater(@NotNull Location location, long delay, @NotNull Runnable runnable);
+
+    /**
+     * 指定したエンティティを所有するスレッドで、次の tick にタスクを実行するよう予約する。
+     * <p>
+     * Folia ではエンティティのスケジューラを使うため、エンティティが別のリージョンへ移ってもタスクは追従する。
+     * </p>
+     *
+     * @param entity 同期する対象のエンティティ
+     * @param runnable 実行するタスク
+     * @param retired タスクが実行される前にエンティティが取り除かれた場合に、代わりに実行する処理
+     * @return 予約したタスク。予約に失敗した場合は null
+     * @since 3.7.0
+     */
+    @Nullable ModelTask task(@NotNull Entity entity, @NotNull Runnable runnable, @NotNull Runnable retired);
+
+    /**
+     * 指定したエンティティを所有するスレッドで、遅延後にタスクを実行するよう予約する。
+     * <p>
+     * Folia ではエンティティのスケジューラを使うため、エンティティが別のリージョンへ移ってもタスクは追従する。
+     * </p>
+     *
+     * @param entity 同期する対象のエンティティ
+     * @param delay 遅延（tick）
+     * @param runnable 実行するタスク
+     * @param retired タスクが実行される前にエンティティが取り除かれた場合に、代わりに実行する処理
+     * @return 予約したタスク。予約に失敗した場合は null
+     * @since 3.7.0
+     */
+    @Nullable ModelTask taskLater(@NotNull Entity entity, long delay, @NotNull Runnable runnable, @NotNull Runnable retired);
 }

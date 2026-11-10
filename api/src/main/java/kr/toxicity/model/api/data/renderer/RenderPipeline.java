@@ -633,6 +633,26 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
         return true;
     }
 
+    /**
+     * パケットを送らずに、プレイヤーを管理から外す。
+     * <p>
+     * 接続が既に切れている（退出した）プレイヤー向け。消去パケットを受け取る相手がいないため送らない。
+     * </p>
+     *
+     * <pre>{@code
+     * boolean forgot = pipeline.forget(player.getUniqueId());
+     * }</pre>
+     *
+     * @param uuid 外すプレイヤーの UUID
+     * @return プレイヤーに表示されていた場合は {@code true}、そうでなければ {@code false}
+     * @throws NullPointerException {@code uuid} が null の場合
+     * @since 3.7.0
+     */
+    @ApiStatus.Internal
+    public boolean forget(@NotNull UUID uuid) {
+        return playerMap.remove(uuid) != null;
+    }
+
     @ApiStatus.Internal
     private void remove0(@NotNull PacketBundler bundler) {
         despawnPacketHandler.accept(bundler);

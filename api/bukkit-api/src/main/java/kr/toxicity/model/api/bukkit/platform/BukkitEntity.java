@@ -7,12 +7,16 @@
 
 package kr.toxicity.model.api.bukkit.platform;
 
+import kr.toxicity.model.api.bukkit.BetterModelBukkit;
 import kr.toxicity.model.api.platform.PlatformEntity;
 import kr.toxicity.model.api.platform.PlatformLocation;
+import kr.toxicity.model.api.scheduler.ModelTask;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
 
@@ -55,5 +59,30 @@ public class BukkitEntity implements PlatformEntity {
     @Override
     public @NotNull PlatformLocation location() {
         return BukkitAdapter.adapt(source.getLocation());
+    }
+
+    @Override
+    public @Nullable ModelTask task(@NotNull Runnable runnable) {
+        return task(runnable, () -> {});
+    }
+
+    @Override
+    public @Nullable ModelTask taskLater(long delay, @NotNull Runnable runnable) {
+        return taskLater(delay, runnable, () -> {});
+    }
+
+    @Override
+    public @Nullable ModelTask task(@NotNull Runnable runnable, @NotNull Runnable retired) {
+        return BetterModelBukkit.platform().scheduler().task(source, runnable, retired);
+    }
+
+    @Override
+    public @Nullable ModelTask taskLater(long delay, @NotNull Runnable runnable, @NotNull Runnable retired) {
+        return BetterModelBukkit.platform().scheduler().taskLater(source, delay, runnable, retired);
+    }
+
+    @Override
+    public boolean isOwnedByCurrentThread() {
+        return BetterModelBukkit.IS_FOLIA ? Bukkit.isOwnedByCurrentRegion(source) : Bukkit.isPrimaryThread();
     }
 }

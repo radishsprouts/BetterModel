@@ -13,6 +13,7 @@ import kr.toxicity.model.api.scheduler.ModelTask
 import kr.toxicity.model.bukkit.util.PLUGIN
 import org.bukkit.Bukkit
 import org.bukkit.Location
+import org.bukkit.entity.Entity
 import java.util.concurrent.TimeUnit
 
 class PaperScheduler : BukkitModelScheduler {
@@ -38,6 +39,19 @@ class PaperScheduler : BukkitModelScheduler {
         Bukkit.getRegionScheduler().runDelayed(PLUGIN, location, {
             runnable.run()
         }, delay).wrap()
+    }
+
+    // エンティティのスケジューラ。タスクはリージョンをまたいでエンティティに追従し、エンティティが無くなった時は retired が実行される。
+    override fun task(entity: Entity, runnable: Runnable, retired: Runnable): ModelTask? = ifEnabled {
+        entity.scheduler.run(PLUGIN, {
+            runnable.run()
+        }, retired)?.wrap()
+    }
+
+    override fun taskLater(entity: Entity, delay: Long, runnable: Runnable, retired: Runnable): ModelTask? = ifEnabled {
+        entity.scheduler.runDelayed(PLUGIN, {
+            runnable.run()
+        }, retired, delay.coerceAtLeast(1))?.wrap()
     }
 
     override fun asyncTask(runnable: Runnable) = Bukkit.getAsyncScheduler().runNow(PLUGIN) {

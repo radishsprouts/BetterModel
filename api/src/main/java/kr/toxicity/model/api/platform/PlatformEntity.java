@@ -55,6 +55,53 @@ public interface PlatformEntity extends PlatformRegionHolder {
     }
 
     /**
+     * このエンティティを所有するスレッドでタスクを実行するよう予約する。
+     * <p>
+     * タスクが実行される前にエンティティが取り除かれた場合は、代わりに {@code retired} を実行する（通知できるプラットフォームのみ）。
+     * 既定の実装は {@code retired} を無視し、{@link #task(Runnable)} に委譲する。
+     * </p>
+     *
+     * @param runnable 実行するタスク
+     * @param retired エンティティが取り除かれていた場合に、代わりに実行する処理
+     * @return 予約したタスク。予約に失敗した場合は null
+     * @since 3.7.0
+     */
+    default @Nullable ModelTask task(@NotNull Runnable runnable, @NotNull Runnable retired) {
+        return task(runnable);
+    }
+
+    /**
+     * このエンティティを所有するスレッドで、遅延後にタスクを実行するよう予約する。
+     * <p>
+     * タスクが実行される前にエンティティが取り除かれた場合は、代わりに {@code retired} を実行する（通知できるプラットフォームのみ）。
+     * 既定の実装は {@code retired} を無視し、{@link #taskLater(long, Runnable)} に委譲する。
+     * </p>
+     *
+     * @param delay 遅延（tick）
+     * @param runnable 実行するタスク
+     * @param retired エンティティが取り除かれていた場合に、代わりに実行する処理
+     * @return 予約したタスク。予約に失敗した場合は null
+     * @since 3.7.0
+     */
+    default @Nullable ModelTask taskLater(long delay, @NotNull Runnable runnable, @NotNull Runnable retired) {
+        return taskLater(delay, runnable);
+    }
+
+    /**
+     * 現在のスレッドがこのエンティティを所有しており、直接読み書きしてよいかを調べる。
+     * <p>
+     * Folia では、すべての tick スレッドではなく、このエンティティを所有するリージョンのスレッドでのみ true になる。
+     * 既定の実装は、tick スレッドであれば true を返す。
+     * </p>
+     *
+     * @return 現在のスレッドがこのエンティティにアクセスしてよい場合は true
+     * @since 3.7.0
+     */
+    default boolean isOwnedByCurrentThread() {
+        return BetterModel.platform().adapter().isTickThread();
+    }
+
+    /**
      * Retrieves the tracker registry associated with this entity.
      *
      * @return an optional containing the registry if it exists
