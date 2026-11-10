@@ -11,6 +11,7 @@ import kr.toxicity.model.api.bukkit.entity.BaseBukkitEntity
 import kr.toxicity.model.api.platform.PlatformEntity
 import kr.toxicity.model.api.platform.PlatformLocation
 import kr.toxicity.model.api.platform.PlatformPlayer
+import kr.toxicity.model.bukkit.util.wrap
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.effect.MobEffects
 import net.minecraft.world.entity.Entity

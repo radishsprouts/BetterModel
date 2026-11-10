@@ -8,9 +8,6 @@ dependencies {
     shade(project(":bettermodel-core")) { isTransitive = false }
 
     shade(project(":purpur"))
-    rootProject.project("nms").subprojects.forEach {
-        compileOnly(project(it.path))
-    }
 
     shade(libs.bundles.shadedLibrary) {
         exclude("net.kyori")

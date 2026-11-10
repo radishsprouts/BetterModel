@@ -15,7 +15,9 @@ import kr.toxicity.model.api.event.PluginEndReloadEvent
 import kr.toxicity.model.api.event.PluginStartReloadEvent
 import kr.toxicity.model.api.manager.*
 import kr.toxicity.model.api.pack.PackZipper
-import kr.toxicity.model.api.version.MinecraftVersion.*
+import kr.toxicity.model.api.nms.NMS
+import kr.toxicity.model.api.version.MinecraftVersion
+import kr.toxicity.model.api.version.MinecraftVersion.parse
 import kr.toxicity.model.bukkit.configuration.PluginConfiguration
 import kr.toxicity.model.bukkit.manager.CompatibilityManager
 import kr.toxicity.model.bukkit.manager.EntityManager
@@ -28,31 +30,19 @@ import org.bstats.bukkit.Metrics
 import org.bukkit.Bukkit
 import org.semver4j.Semver
 
-private typealias Latest = kr.toxicity.model.bukkit.nms.v26_R3.NMSImpl
-
+/**
+ * @param plugin プラグイン本体
+ * @param nmsFactory サーバーの版に合った NMS の実装を作る処理。版ごとの実装は platform 側が持つ（core は nms の各版を知らない）
+ */
 internal class BetterModelProperties(
-    private val plugin: AbstractBetterModelPlugin
+    private val plugin: AbstractBetterModelPlugin,
+    nmsFactory: (MinecraftVersion) -> NMS
 ) {
     private lateinit var _config: BetterModelConfig
     private var _metrics: Metrics? = null
 
     val version = parse(Bukkit.getBukkitVersion().substringBefore('-'))
-    val nms = when (version) {
-        V26_3 -> Latest()
-        V26_2 -> kr.toxicity.model.bukkit.nms.v26_R2.NMSImpl()
-        V26_1, V26_1_1, V26_1_2 -> kr.toxicity.model.bukkit.nms.v26_R1.NMSImpl()
-        else -> {
-            if (version < V26_1) throw UnsupportedOperationException(
-                "Minecraft $version is not supported. This fork supports Paper/Folia 26.1, 26.2 and 26.3 only. " +
-                    "(対応外のバージョンです。対応しているのは Paper/Folia の 26.1・26.2・26.3 だけです)"
-            )
-            warn(
-                "Note: this version is officially untested.".toComponent(),
-                "So be careful to use!".toComponent()
-            )
-            Latest()
-        }
-    }
+    val nms = nmsFactory(version)
     val scheduler = if (BetterModelBukkit.IS_FOLIA) PaperScheduler() else BukkitScheduler()
     val evaluator = BetterModelEvaluatorImpl()
     val eventbus = BukkitModelEventBusImpl()

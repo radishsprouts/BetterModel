@@ -10,6 +10,8 @@ package kr.toxicity.model.bukkit.nms.v26_R3
 import kr.toxicity.model.api.event.ModelDamageSource
 import kr.toxicity.model.api.platform.PlatformEntity
 import kr.toxicity.model.api.platform.PlatformLocation
+import kr.toxicity.model.bukkit.util.unwarp
+import kr.toxicity.model.bukkit.util.wrap
 import net.minecraft.world.damagesource.DamageSource
 import org.bukkit.craftbukkit.util.CraftLocation
 
