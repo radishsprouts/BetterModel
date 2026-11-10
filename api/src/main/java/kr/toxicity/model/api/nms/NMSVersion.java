@@ -15,6 +15,7 @@ import org.jetbrains.annotations.NotNull;
  * Enumerates supported Minecraft server versions and their associated metadata.
  * <p>
  * This enum maps internal version identifiers to Minecraft versions and resource pack formats.
+ * Only Minecraft 26.1 and later are supported (resource pack format 84 and above).
  * </p>
  *
  * @since 1.15.2
@@ -22,31 +23,6 @@ import org.jetbrains.annotations.NotNull;
 @RequiredArgsConstructor
 @Getter
 public enum NMSVersion {
-    /**
-     * Minecraft 1.21.4
-     * @since 1.15.2
-     */
-    V1_21_R3(46),
-    /**
-     * Minecraft 1.21.5
-     * @since 1.15.2
-     */
-    V1_21_R4(55),
-    /**
-     * Minecraft 1.21.6 - 1.21.8
-     * @since 1.15.2
-     */
-    V1_21_R5(64),
-    /**
-     * Minecraft 1.21.9 - 1.21.10
-     * @since 1.15.2
-     */
-    V1_21_R6(69),
-    /**
-     * Minecraft 1.21.11
-     * @since 1.15.2
-     */
-    V1_21_R7(75),
     /**
      * Minecraft 26.1.x
      * @since 3.0.0

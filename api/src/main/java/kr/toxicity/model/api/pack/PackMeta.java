@@ -103,7 +103,8 @@ public record PackMeta(
      *
      * @param packFormat the pack format version
      * @param description the pack description
-     * @param supportedFormats the range of supported formats
+     * @param supportedFormats the legacy range of supported formats (null to omit; it is only allowed when
+     *                         the pack also supports clients older than 1.21.9, which BetterModel no longer does)
      * @param minFormat the minimum supported format (>= 1.21.9)
      * @param maxFormat the maximum supported format
      * @since 1.15.2
@@ -111,7 +112,7 @@ public record PackMeta(
     public record Pack(
         @SerializedName("pack_format") int packFormat,
         @SerializedName("description") @NotNull String description,
-        @SerializedName("supported_formats") @NotNull VersionRange supportedFormats,
+        @SerializedName("supported_formats") @Nullable VersionRange supportedFormats,
         @SerializedName("min_format") @NotNull PackVersion minFormat, //>=1.21.9
         @SerializedName("max_format") @NotNull PackVersion maxFormat
     ) {
@@ -168,14 +169,14 @@ public record PackMeta(
     /**
      * Represents a single entry in the overlays list.
      *
-     * @param formats the range of formats this overlay applies to (removed in 1.21.9)
+     * @param formats the range of formats this overlay applies to (removed in 1.21.9, null to omit)
      * @param directory the directory name for the overlay
      * @param minFormat the minimum format (>= 1.21.9)
      * @param maxFormat the maximum format
      * @since 1.15.2
      */
     public record OverlayEntry(
-        @NotNull VersionRange formats, //Removed in 1.21.9
+        @Nullable VersionRange formats, //Removed in 1.21.9
         @NotNull String directory,
         @SerializedName("min_format") @NotNull PackVersion minFormat, //>=1.21.9
         @SerializedName("max_format") @NotNull PackVersion maxFormat
@@ -192,7 +193,7 @@ public record PackMeta(
             @NotNull String directory
         ) {
             this(
-                formats,
+                null,
                 directory,
                 new PackVersion(formats.minInclusive),
                 new PackVersion(formats.maxInclusive)
@@ -247,10 +248,7 @@ public record PackMeta(
         private int format = BetterModel.nms().version().getMetaVersion();
         private String description = "BetterModel's default pack.";
         private final List<OverlayEntry> entries = new ArrayList<>();
-        private VersionRange supportedFormats = new VersionRange(
-            NMSVersion.first().getMetaVersion(),
-            NMSVersion.latest().getMetaVersion() //<=1.21.8
-        );
+        private VersionRange supportedFormats = null; //Not allowed for packs that only target >=1.21.9
         private PackVersion minFormat = new PackVersion(NMSVersion.first().getMetaVersion());
         private PackVersion maxFormat = new PackVersion(NMSVersion.latest().getMetaVersion());
 
@@ -291,14 +289,14 @@ public record PackMeta(
         }
 
         /**
-         * Sets the supported formats range.
+         * Sets the legacy supported formats range (null to omit it).
          *
          * @param range the version range
          * @return this builder
          * @since 1.15.2
          */
-        public @NotNull Builder supportedFormats(@NotNull VersionRange range) {
-            supportedFormats = Objects.requireNonNull(range);
+        public @NotNull Builder supportedFormats(@Nullable VersionRange range) {
+            supportedFormats = range;
             return this;
         }
 
