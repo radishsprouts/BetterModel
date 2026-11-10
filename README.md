@@ -1,3 +1,31 @@
+## このフォークの開発者向けメモ（日本語）
+
+角鯖で使う Folia 対応のフォークです。配布物は Paper（Folia 兼用）用の jar だけで、対応するのは Minecraft 26.1・26.2・26.3 です。Gradle のタスクは `bettermodel` の組に4つだけまとめてあります（`.\gradlew.bat tasks` で確認できます）。
+
+jar を作る（`build/libs/` に BetterModel と test-plugin の jar が出ます）:
+
+```powershell
+.\gradlew.bat buildPlugin
+```
+
+Folia で試す（Folia を取得して起動し、BetterModel と test-plugin を入れます）:
+
+```powershell
+.\gradlew.bat runFolia
+```
+
+初回だけ、Mojang の EULA に同意する必要があります。1回目は `You need to agree to the EULA` と出て止まるので、`run\eula.txt` の `eula=false` を `eula=true` に書き換えてからもう一度実行します。
+
+ArenaPvP から API を使う（`api` と `api:bukkit-api` をローカルの Maven に出します。座標は `kr.toxicity.model:bettermodel-api` と `kr.toxicity.model:bettermodel-bukkit-api`）:
+
+```powershell
+.\gradlew.bat publishApiToMavenLocal
+```
+
+全モジュールのビルドとライセンスヘッダの確認は `.\gradlew.bat checkAll` です。以下は上流（toxicity188/BetterModel）の英語の説明で、上流の公開先（Maven Central・Modrinth・Hangar）はこのフォークでは使えません。
+
+* * *
+
 <div align="center">
 
 ![](https://github.com/user-attachments/assets/89e191ba-ed4f-44ab-bb98-634cfe568dca)

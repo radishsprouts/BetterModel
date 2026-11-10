@@ -1,6 +1,5 @@
 plugins {
     id("bukkit-conventions")
-    id("modrinth-conventions")
     id("com.gradleup.shadow")
 }
 
@@ -19,8 +18,9 @@ dependencies {
 }
 
 tasks {
-    jar {
-        finalizedBy(shadowJar)
+    // jar を作るたびに shadowJar が走る形（finalizedBy）はやめ、assemble が shadowJar に依存する普通の形にする
+    assemble {
+        dependsOn(shadowJar)
     }
     shadowJar {
         duplicatesStrategy = DuplicatesStrategy.WARN
@@ -52,15 +52,5 @@ tasks {
         prefix("org.incendo.cloud")
         prefix("org.bstats")
         prefix("net.byteflux.libby")
-    }
-}
-
-modrinth {
-    uploadFile.set(tasks.shadowJar)
-    dependencies {
-        optional.project(
-            "mythicmobs",
-            "skinsrestorer"
-        )
     }
 }
