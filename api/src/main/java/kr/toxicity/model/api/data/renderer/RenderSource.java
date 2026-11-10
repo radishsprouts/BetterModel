@@ -20,6 +20,7 @@ import kr.toxicity.model.api.profile.ModelProfile;
 import kr.toxicity.model.api.tracker.*;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -128,6 +129,24 @@ public sealed interface RenderSource<T extends Tracker> {
      */
     default BoneRenderContext fallbackContext() {
         return new BoneRenderContext(this);
+    }
+
+    /**
+     * Returns the profile that was explicitly assigned when this source was created.
+     * <p>
+     * 付ける時に皮膚を指定していない場合は null を返す（プレイヤー自身の皮膚や既定の皮膚を使う）。
+     * リロードやサーバーの再起動のあとに、同じ皮膚で付け直すために使う。
+     * </p>
+     *
+     * <pre>{@code
+     * var profile = source.assignedProfile();
+     * }</pre>
+     *
+     * @return the assigned profile, or null if none was assigned
+     * @since 3.7.0
+     */
+    default @Nullable ModelProfile.Uncompleted assignedProfile() {
+        return null;
     }
 
     /**
@@ -272,6 +291,11 @@ public sealed interface RenderSource<T extends Tracker> {
     record ProfiledEntity(@NotNull BaseEntity entity, @NotNull ModelProfile.Uncompleted profile) implements Entity {
 
         @Override
+        public @NotNull ModelProfile.Uncompleted assignedProfile() {
+            return profile;
+        }
+
+        @Override
         public @NotNull CompletableFuture<BoneRenderContext> completeContext() {
             return BetterModel.platform().manager(SkinManager.class).complete(profile).thenApply(skin -> new BoneRenderContext(this, skin));
         }
@@ -299,6 +323,11 @@ public sealed interface RenderSource<T extends Tracker> {
      * @since 1.15.2
      */
     record ProfiledPlayer(@NotNull BasePlayer entity, @NotNull ModelProfile.Uncompleted externalProfile) implements Player {
+
+        @Override
+        public @NotNull ModelProfile.Uncompleted assignedProfile() {
+            return externalProfile;
+        }
 
         @Override
         public @NotNull CompletableFuture<BoneRenderContext> completeContext() {

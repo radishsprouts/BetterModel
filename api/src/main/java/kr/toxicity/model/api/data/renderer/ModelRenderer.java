@@ -635,8 +635,11 @@ public record ModelRenderer(
         GENERAL(true),
         /**
          * Player
+         * <p>
+         * 皮膚を保存して、リロードや再起動のあとも同じ皮膚で付け直す。
+         * </p>
          */
-        PLAYER(false)
+        PLAYER(true)
         ;
         private final boolean canBeSaved;
     }
