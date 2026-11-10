@@ -36,6 +36,11 @@ bukkitPluginYaml {
         description = "Gets roll animation's info."
         permission = "bettermodel.rollinfo"
     }
+    commands.register("bmtest") {
+        usage = "/<command> help"
+        description = "Verification commands for manual in-game checks (op only)."
+        permission = "bettermodel.test"
+    }
     commands.register("knightsword") {
         usage = "/<command>"
         description = "Gets knight sword"

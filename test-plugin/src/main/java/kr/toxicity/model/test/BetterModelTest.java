@@ -20,7 +20,8 @@ public final class BetterModelTest extends JavaPlugin {
 
     private final List<ModelTester> testers = List.of(
         new RollTester(),
-        new FightTester()
+        new FightTester(),
+        new DebugCommandTester()
     );
 
     @Override
