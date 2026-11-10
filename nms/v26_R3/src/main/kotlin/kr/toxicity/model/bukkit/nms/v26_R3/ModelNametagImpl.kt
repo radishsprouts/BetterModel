@@ -44,7 +44,8 @@ internal class ModelNametagImpl(
         )
     }
 
-    private val viewedPlayer = ConcurrentHashMap.newKeySet<UUID>()
+    // 見えているプレイヤーと、そのプレイヤーへ送った本文の版を持つ。
+    private val viewedPlayer = ConcurrentHashMap<UUID, Long>()
     private val display = Display.TextDisplay(
         EntityTypes.TEXT_DISPLAY,
         MinecraftServer.getServer().overworld()
@@ -69,44 +70,111 @@ internal class ModelNametagImpl(
         this.alwaysVisible = alwaysVisible
     }
 
+    // 本文が変わるたびに増やす版。プレイヤーごとに、どの版まで送ったかを覚える。
+    private var dataVersion = 0L
+    private var active = false
+    private var sharedPosition = Vec3.ZERO
+    private var sharedPositionPacket: ClientboundEntityPositionSyncPacket? = null
+    private var sharedAddPacket: ClientboundAddEntityPacket? = null
+    private var dirtyPacket: ClientboundSetEntityDataPacket? = null
+    private val removePacket = ClientboundRemoveEntitiesPacket(display.id)
+
+    /**
+     * tick に1回だけ、移動と変更分の取り出しを行う。
+     * 変更分（packDirty）は取り出すと消えるので、ここで1回だけ取り、全員へ同じものを送る。
+     */
+    override fun update() {
+        active = display.text != VanillaComponent.empty()
+        if (!active) {
+            sharedPositionPacket = null
+            sharedAddPacket = null
+            dirtyPacket = null
+            return
+        }
+        sharedPosition = positionOf(null)
+        display.moveTo(sharedPosition)
+        sharedPositionPacket = positionPacket(sharedPosition)
+        sharedAddPacket = null
+        dirtyPacket = display.entityData.packDirty()?.let {
+            dataVersion++
+            ClientboundSetEntityDataPacket(display.id, it)
+        }
+    }
+
     override fun send(player: PlatformPlayer) {
-        if (display.text == VanillaComponent.empty()) return
-        val hb = bone.group.hitboxPosition.localOffset
-        val pos = bone.worldPosition(BonePosition(emptyVector, hb, player.uuid()), posCache)
-        display.moveTo(Vec3(
-            location.x() + pos.x,
-            location.y() + pos.y,
-            location.z() + pos.z
-        ))
+        if (!active) return
+        val uuid = player.uuid()
         val inPoint = alwaysVisible || EntityUtil.isCustomNameVisible(player.location(), location)
+        // プレイヤー個別のアニメーション状態を持つ時だけ、そのプレイヤー用の位置を計算し直す。
+        val personal = if (inPoint && bone.hasPlayerState(uuid)) positionOf(uuid) else null
+        val viewed = viewedPlayer[uuid]
         when {
-            inPoint && viewedPlayer.add(player.uuid()) -> bundlerOfNotNull(
-                addPacket,
-                display.entityData.pack()?.let {
-                    ClientboundSetEntityDataPacket(display.id, it)
-                }
-            )
-            inPoint -> bundlerOfNotNull(
-                ClientboundEntityPositionSyncPacket(display.id, PositionPath.of(display.position()), display.yRot, display.xRot, false),
-                display.entityData.packDirty()?.let {
-                    ClientboundSetEntityDataPacket(display.id, it)
-                }
-            )
-            viewedPlayer.remove(player.uuid()) -> bundlerOf(removePacket)
+            inPoint && viewed == null -> {
+                viewedPlayer[uuid] = dataVersion
+                bundlerOfNotNull(
+                    if (personal != null) addPacket(personal) else sharedAddPacket(),
+                    display.entityData.pack()?.let {
+                        ClientboundSetEntityDataPacket(display.id, it)
+                    }
+                )
+            }
+            inPoint -> {
+                // 隠されていた間などに本文の更新を逃したプレイヤーには、全体を送り直す。
+                val held = viewed ?: dataVersion
+                viewedPlayer[uuid] = dataVersion
+                bundlerOfNotNull(
+                    if (personal != null) positionPacket(personal) else sharedPositionPacket,
+                    when {
+                        held == dataVersion -> null
+                        held == dataVersion - 1 && dirtyPacket != null -> dirtyPacket
+                        else -> display.entityData.pack()?.let { ClientboundSetEntityDataPacket(display.id, it) }
+                    }
+                )
+            }
+            viewedPlayer.remove(uuid) != null -> bundlerOf(removePacket)
             else -> null
         }?.send(player)
     }
 
     override fun remove(bundler: PacketBundler) {
+        viewedPlayer.clear()
         bundler += removePacket
     }
 
-    private val addPacket get() = ClientboundAddEntityPacket(
+    override fun remove(player: PlatformPlayer, bundler: PacketBundler) {
+        if (viewedPlayer.remove(player.uuid()) != null) bundler += removePacket
+    }
+
+    override fun forget(uuid: UUID) {
+        viewedPlayer.remove(uuid)
+    }
+
+    private fun positionOf(uuid: UUID?): Vec3 {
+        val hb = bone.group.hitboxPosition.localOffset
+        val pos = bone.worldPosition(BonePosition(emptyVector, hb, uuid), posCache)
+        return Vec3(
+            location.x() + pos.x,
+            location.y() + pos.y,
+            location.z() + pos.z
+        )
+    }
+
+    private fun positionPacket(position: Vec3) = ClientboundEntityPositionSyncPacket(
+        display.id,
+        PositionPath.of(position),
+        display.yRot,
+        display.xRot,
+        false
+    )
+
+    private fun sharedAddPacket() = sharedAddPacket ?: addPacket(sharedPosition).also { sharedAddPacket = it }
+
+    private fun addPacket(position: Vec3) = ClientboundAddEntityPacket(
         display.id,
         display.uuid,
-        display.x,
-        display.y,
-        display.z,
+        position.x,
+        position.y,
+        position.z,
         display.xRot,
         display.yRot,
         display.type,
@@ -114,6 +182,4 @@ internal class ModelNametagImpl(
         display.deltaMovement,
         display.yHeadRot.toDouble()
     )
-
-    private val removePacket get() = ClientboundRemoveEntitiesPacket(display.id)
 }

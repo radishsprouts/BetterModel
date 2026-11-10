@@ -800,10 +800,16 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
     public boolean createNametag(@NotNull BonePredicate predicate, @NotNull BiConsumer<RenderedBone, ModelNametag> consumer) {
         return tryUpdate((b, p) -> b.createNametag(p, tag -> {
             consumer.accept(b, tag);
-            perPlayerTick((tracker, player) -> {
-                if (pipeline.getSource() instanceof RenderSource.Entity entity && entity.entity().uuid().equals(player.uuid())) return;
-                tag.teleport(tracker.location());
-                tag.send(player);
+            // 移動と変更分の取り出しは tick に1回だけ行い、送信だけをプレイヤーごとに行う。
+            tick(_ -> {
+                tag.teleport(location());
+                tag.update();
+                var ownerUuid = pipeline.getSource() instanceof RenderSource.Entity entity ? entity.entity().uuid() : null;
+                pipeline.forEachNonHidePlayer(handler -> {
+                    var player = handler.player();
+                    if (player.uuid().equals(ownerUuid)) return;
+                    tag.send(player);
+                });
             });
         }), predicate);
     }
