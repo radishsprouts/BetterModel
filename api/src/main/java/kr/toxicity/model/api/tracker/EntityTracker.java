@@ -184,10 +184,10 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
 
     private void updateLocation() {
         var loc = sourceEntity().location();
-        if (this.location.distanceSquared(loc) < MathUtil.VECTOR_COMPARISON_EPSILON_SQ) return;
-        synchronized (this) {
-            this.location = loc;
-        }
+        var previous = this.location;
+        // 座標が同じでも、ワールドが変わった場合は反映する。
+        if (previous.world().equals(loc.world()) && previous.distanceSquared(loc) < MathUtil.VECTOR_COMPARISON_EPSILON_SQ) return;
+        this.location = loc;
         pipeline.forEach(bone -> bone.applyAtDisplay(BonePredicate.TRUE, display -> display.syncPosition(loc)));
     }
 

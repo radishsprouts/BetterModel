@@ -388,20 +388,21 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
     /**
      * Updates bone animations and ticks the model hierarchy.
      *
-     * <p>This method only performs the logical animation tick without resolving IK
-     * or dispatching transform updates to players. To solve IK and bundle transformation
-     * packets after an update, call {@link #send(AnimationBundler)}.
+     * <p>このメソッドはアニメーションの論理的な進行だけを行い、IK の解決も
+     * プレイヤーへの変形の送信も行いません。IK を解いて新しいキーフレームを反映するには
+     * {@link #sync(long)} を呼び、受け手ごとに {@link #send(AnimationBundler, long, int)} を呼びます。
      *
      * <pre>{@code
      * if (pipeline.tick()) {
+     *     pipeline.sync(++version);
      *     AnimationBundler bundler = pipeline.createAnimationBundler();
-     *     pipeline.send(bundler);
+     *     pipeline.send(bundler, version - 1, 0);
      *     pipeline.forEachNonHidePlayer(bundler::send);
      * }
      * }</pre>
      *
-     * @return {@code true} if any bone or animation updates occurred, {@code false} otherwise
-     * @see #send(AnimationBundler)
+     * @return ボーンまたはアニメーションに更新があれば {@code true}
+     * @see #sync(long)
      * @since 3.7.0
      */
     public boolean tick() {
@@ -409,19 +410,39 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
     }
 
     /**
-     * Solves inverse kinematics (IK) and bundles the current bone transformations into the given bundler.
+     * 逆運動学（IK）を解き、全ボーンの最新キーフレームを反映します（パケットは作りません）。
      *
-     * <p>This is typically invoked immediately after {@link #tick()} reports an animation update.
+     * <p>通常は {@link #tick()} がアニメーションの更新を返した直後に呼びます。
+     * この呼び出しで変化したボーンには指定した版が記録され、
+     * {@link #send(AnimationBundler, long, int)} は受け手がまだ持っていない分だけを送れます。
      *
-     * @param bundler the animation packet bundler to receive transformation data
-     * @throws NullPointerException if {@code bundler} is null
+     * @param version 単調増加の版番号（過去のどの版よりも大きいこと）
      * @see #tick()
      * @since 3.7.0
      */
-    public void send(@NotNull AnimationBundler bundler) {
-        Objects.requireNonNull(bundler);
+    public void sync(long version) {
         ikSolver.solve();
-        forEach(b -> b.sendTransformation(null, bundler));
+        forEach(b -> b.syncTransformation(version));
+    }
+
+    /**
+     * 指定した版より後に変化したボーンの変形をバンドルにまとめます。
+     *
+     * <pre>{@code
+     * AnimationBundler bundler = pipeline.createAnimationBundler();
+     * pipeline.send(bundler, lastSentVersion, 2);
+     * }</pre>
+     *
+     * @param bundler 変形データを受け取るアニメーションパケットのバンドラー
+     * @param sinceVersion 受け手がすでに持っている最後の版
+     * @param minDuration 補間時間の下限（ティック）。受け手が飛ばしたフレーム分を埋める
+     * @throws NullPointerException if {@code bundler} is null
+     * @see #sync(long)
+     * @since 3.7.0
+     */
+    public void send(@NotNull AnimationBundler bundler, long sinceVersion, int minDuration) {
+        Objects.requireNonNull(bundler);
+        forEach(b -> b.sendTransformation(sinceVersion, minDuration, bundler));
     }
 
     /**

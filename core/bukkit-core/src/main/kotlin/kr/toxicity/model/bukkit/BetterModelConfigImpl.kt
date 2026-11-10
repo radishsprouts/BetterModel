@@ -71,6 +71,11 @@ class BetterModelConfigImpl(yaml: ConfigurationSection) : BetterModelConfig {
     private val cancelPlayerModelInventory = yaml.getBoolean("cancel-player-model-inventory")
     private val playerHideDelay = yaml.getLong("player-hide-delay", 3L).coerceAtLeast(1L)
     private val packetBundlingSize = yaml.getInt("packet-bundling-size", 16)
+    private val animationLod = yaml.getBoolean("animation-lod", true)
+    private val animationLodNearDistance = yaml.getDouble("animation-lod-near-distance", 16.0).coerceAtLeast(0.0)
+    private val animationLodFarDistance = yaml.getDouble("animation-lod-far-distance", 32.0).coerceAtLeast(animationLodNearDistance)
+    private val animationLodNearStep = yaml.getInt("animation-lod-near-step", 2).coerceAtLeast(1)
+    private val animationLodFarStep = yaml.getInt("animation-lod-far-step", 4).coerceAtLeast(1)
     private val enableStrictLoading = yaml.getBoolean("enable-strict-loading")
 
     override fun debug(): DebugConfig = debug
@@ -94,5 +99,10 @@ class BetterModelConfigImpl(yaml: ConfigurationSection) : BetterModelConfig {
     override fun cancelPlayerModelInventory(): Boolean = cancelPlayerModelInventory
     override fun playerHideDelay(): Long = playerHideDelay
     override fun packetBundlingSize(): Int = packetBundlingSize
+    override fun animationLod(): Boolean = animationLod
+    override fun animationLodNearDistance(): Double = animationLodNearDistance
+    override fun animationLodFarDistance(): Double = animationLodFarDistance
+    override fun animationLodNearStep(): Int = animationLodNearStep
+    override fun animationLodFarStep(): Int = animationLodFarStep
     override fun enableStrictLoading(): Boolean = enableStrictLoading
 }

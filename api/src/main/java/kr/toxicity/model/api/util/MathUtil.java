@@ -90,7 +90,7 @@ public final class MathUtil {
     /**
      * Quaternion comparison epsilon value
      */
-    public static final float QUATERNION_COMPARISON_EPSILON = 1E-4F;
+    public static final float QUATERNION_COMPARISON_EPSILON = 1E-5F;
 
     private static final Vector3f ZERO_VECTOR = new Vector3f();
 
@@ -171,12 +171,29 @@ public final class MathUtil {
     }
 
     /**
-     * Creates epsilon-based hashcode of given float
+     * 指定した float の許容誤差を使ったハッシュコードを作ります。
+     * <p>
+     * 値は最も近い許容誤差の区間へ丸めるので、{@link #isSameBucket(float, float)} とこのハッシュコードは一致します。
+     * </p>
      * @param value value
      * @return hashcode
      */
     public static int similarHashCode(float value) {
-        return (int) (value / FLOAT_COMPARISON_EPSILON);
+        return Math.round(value / FLOAT_COMPARISON_EPSILON);
+    }
+
+    /**
+     * 2つの float が許容誤差の同じ区間に入るかを調べます。
+     * <p>
+     * {@link #isSimilar(float, float)} と違って同値関係になるので、
+     * {@link #similarHashCode(float)} と矛盾しない {@code equals} の実装に使えます。
+     * </p>
+     * @param a a
+     * @param b b
+     * @return 同じ区間か
+     */
+    public static boolean isSameBucket(float a, float b) {
+        return similarHashCode(a) == similarHashCode(b);
     }
 
     /**

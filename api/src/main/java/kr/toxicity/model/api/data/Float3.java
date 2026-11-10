@@ -203,9 +203,9 @@ public record Float3(
     public boolean equals(Object obj) {
         if (obj == this) return true;
         if (!(obj instanceof Float3(float x1, float y1, float z1))) return false;
-        return MathUtil.isSimilar(x, x1)
-            && MathUtil.isSimilar(y, y1)
-            && MathUtil.isSimilar(z, z1);
+        return MathUtil.isSameBucket(x, x1)
+            && MathUtil.isSameBucket(y, y1)
+            && MathUtil.isSameBucket(z, z1);
     }
 
     @Override

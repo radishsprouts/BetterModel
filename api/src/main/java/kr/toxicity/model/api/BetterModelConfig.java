@@ -206,6 +206,50 @@ public interface BetterModelConfig {
     int packetBundlingSize();
 
     /**
+     * アニメーションパケットの距離による間引き（LOD）が有効かどうかを返します。
+     * <p>
+     * 有効な場合、モデルから遠いプレイヤーへのアニメーションパケットの送信頻度が下がります
+     * （飛ばしたフレーム分は補間時間を延ばして埋めます）。
+     * </p>
+     *
+     * @return 有効なら true
+     * @since 3.7.0
+     */
+    boolean animationLod();
+
+    /**
+     * {@link #animationLodNearStep()} の間引きが始まる距離（ブロック）を返します。
+     *
+     * @return 近い側の距離
+     * @since 3.7.0
+     */
+    double animationLodNearDistance();
+
+    /**
+     * {@link #animationLodFarStep()} の間引きが始まる距離（ブロック）を返します。
+     *
+     * @return 遠い側の距離
+     * @since 3.7.0
+     */
+    double animationLodFarDistance();
+
+    /**
+     * 近い側の距離から遠い側の距離までの間で、何フレーム（1フレーム 25ms）を1回の送信にまとめるかを返します。
+     *
+     * @return 近い側の間引き幅（1 以上）
+     * @since 3.7.0
+     */
+    int animationLodNearStep();
+
+    /**
+     * 遠い側の距離より先で、何フレーム（1フレーム 25ms）を1回の送信にまとめるかを返します。
+     *
+     * @return 遠い側の間引き幅（1 以上）
+     * @since 3.7.0
+     */
+    int animationLodFarStep();
+
+    /**
      * Checks if strict loading mode is enabled.
      * <p>
      * Strict loading causes the platform to fail fast on model loading errors.

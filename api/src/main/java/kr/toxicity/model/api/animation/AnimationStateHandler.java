@@ -7,7 +7,9 @@
 
 package kr.toxicity.model.api.animation;
 
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import kr.toxicity.model.api.tracker.Tracker;
+import kr.toxicity.model.api.util.LogUtil;
 import kr.toxicity.model.api.util.MathUtil;
 import kr.toxicity.model.api.util.collection.PriorityMap;
 import lombok.Getter;
@@ -17,6 +19,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Iterator;
+import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 
@@ -111,6 +114,7 @@ public final class AnimationStateHandler<T extends Timed> {
     public boolean tick(@NotNull Runnable ifEmpty) {
         delay--;
         if (animators.isEmpty()) {
+            forceUpdate = false;
             ifEmpty.run();
             return false;
         }
@@ -131,38 +135,69 @@ public final class AnimationStateHandler<T extends Timed> {
     }
 
     private boolean updateAnimation() {
+        // removeTask はこのハンドラーへ再入しうる（別のアニメーションの再生・停止）ため、ロックの外で実行する。
+        List<Runnable> finished = null;
+        boolean result;
         synchronized (animators) {
+            forceUpdate = false;
             var iterator = animators.valueIterator();
+            result = true;
+            var handled = false;
             while (iterator.hasNext()) {
                 var next = iterator.next();
                 if (!next.getAsBoolean()) continue;
-                if (currentIterator == null) {
+                var current = currentIterator;
+                if (current == null) {
                     if (updateKeyframe(iterator, next)) {
                         currentIterator = next;
-                        return setAfterKeyframe(next.next());
+                        result = setAfterKeyframe(next.next());
+                        handled = true;
+                        break;
                     }
-                } else if (currentIterator != next) {
+                } else if (current != next) {
                     if (updateKeyframe(iterator, next)) {
-                        currentIterator.clear();
+                        current.clear();
                         currentIterator = next;
-                        return setAfterKeyframe(next.next());
+                        result = setAfterKeyframe(next.next());
+                        handled = true;
+                        break;
                     }
                 } else if (keyframeFinished()) {
                     if (updateKeyframe(iterator, next)) {
-                        return setAfterKeyframe(next.next());
+                        result = setAfterKeyframe(next.next());
+                        handled = true;
+                        break;
                     }
                 } else {
-                    return false;
+                    result = false;
+                    handled = true;
+                    break;
+                }
+                if (next.finished) {
+                    if (finished == null) finished = new ObjectArrayList<>();
+                    finished.add(next.removeTask);
+                }
+            }
+            if (!handled) result = setAfterKeyframe(null);
+        }
+        if (finished != null) {
+            for (var task : finished) {
+                try {
+                    task.run();
+                } catch (Throwable throwable) {
+                    LogUtil.handleException("アニメーションの終了処理に失敗しました。", throwable);
                 }
             }
         }
-        return setAfterKeyframe(null);
+        return result;
     }
 
     private boolean updateKeyframe(@NotNull Iterator<TreeIterator> iterator, @NotNull TreeIterator next) {
         if (!next.hasNext()) {
-            next.removeTask.run();
+            // 先に取り除き、タスクはロックを手放した後に実行する。
             iterator.remove();
+            if (currentIterator == next) currentIterator = null;
+            next.finished = true;
             return false;
         } else {
             return true;
@@ -215,7 +250,9 @@ public final class AnimationStateHandler<T extends Timed> {
      */
     public boolean stopAnimation(@NotNull String name) {
         synchronized (animators) {
-            if (animators.remove(name) != null) {
+            var removed = animators.remove(name);
+            if (removed != null) {
+                if (currentIterator == removed) currentIterator = null;
                 forceUpdate = true;
                 return true;
             }
@@ -228,7 +265,8 @@ public final class AnimationStateHandler<T extends Timed> {
      * @return ticking frame
      */
     public float frame() {
-        return afterKeyframe != null ? MathUtil.MINECRAFT_TICKS_PER_SECOND * Tracker.MINECRAFT_TICK_MULTIPLIER * (currentIterator.time + MathUtil.FRAME_EPSILON) : 0F;
+        var iterator = currentIterator;
+        return afterKeyframe != null && iterator != null ? MathUtil.MINECRAFT_TICKS_PER_SECOND * Tracker.MINECRAFT_TICK_MULTIPLIER * (iterator.time + MathUtil.FRAME_EPSILON) : 0F;
     }
 
     private class TreeIterator implements BooleanSupplier {
@@ -241,6 +279,7 @@ public final class AnimationStateHandler<T extends Timed> {
 
         private boolean started = false;
         private boolean ended = false;
+        private boolean finished = false;
 
         private float time = 0;
 

@@ -107,10 +107,10 @@ public record Float4(
     public boolean equals(Object obj) {
         if (obj == this) return true;
         if (!(obj instanceof Float4(float dx1, float dz1, float tx1, float tz1))) return false;
-        return MathUtil.isSimilar(dx, dx1)
-            && MathUtil.isSimilar(dz, dz1)
-            && MathUtil.isSimilar(tx, tx1)
-            && MathUtil.isSimilar(tz, tz1);
+        return MathUtil.isSameBucket(dx, dx1)
+            && MathUtil.isSameBucket(dz, dz1)
+            && MathUtil.isSameBucket(tx, tx1)
+            && MathUtil.isSameBucket(tz, tz1);
     }
 
     @Override

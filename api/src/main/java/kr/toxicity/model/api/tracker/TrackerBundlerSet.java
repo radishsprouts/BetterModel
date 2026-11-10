@@ -57,7 +57,9 @@ public final class TrackerBundlerSet {
      */
     void send() {
         if (tickBundler.isNotEmpty()) {
-            pipeline.forEachViewedPlayer(tickBundler::send);
+            // 回転・影のパケットは、視界の判定で今は外れていても追跡中の全員へ送る。
+            // 再び見えた時にモデルが古いままにならないようにするため。
+            pipeline.forEachAllPlayer(tickBundler::send);
             tickBundler = pipeline.createBundler();
         }
         if (dataBundler.isNotEmpty()) {
