@@ -110,3 +110,13 @@ animation-lod-far-step: 4
 # Enables strict loading mode. If true, the plugin will fail to load models with unsupported features.
 # If false, it will attempt to load them by ignoring unsupported parts, which may cause visual issues.
 enable-strict-loading: false
+
+# 統合版（Bedrock）向けの出力の設定。
+# Velocity と Geyser を使うサーバーで、統合版のプレイヤーにもモデルを見せるために使います。
+# 有効な間は、リロードのたびに output-folder へ統合版用のモデル・テクスチャ・目録（index.json）を書き出します。
+# Geyser 側の拡張（KadoDisplayEntity）が、このフォルダを読んで登録します。
+bedrock:
+  # 統合版用の出力を作るか。
+  enabled: true
+  # 出力先のフォルダ名（plugins/BetterModel/ からの相対パス）。
+  output-folder: bedrock

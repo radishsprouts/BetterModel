@@ -22,6 +22,9 @@ import kr.toxicity.model.api.pack.PackZipper
 import kr.toxicity.model.api.profile.ModelProfile
 import kr.toxicity.model.api.profile.ModelProfileInfo
 import kr.toxicity.model.api.skin.SkinData
+import kr.toxicity.model.bedrock.BedrockIds
+import kr.toxicity.model.bedrock.BedrockLimb
+import kr.toxicity.model.bedrock.BedrockLimbs
 import kr.toxicity.model.api.util.TransformedItemStack
 import kr.toxicity.model.util.*
 import org.joml.Vector3f
@@ -38,14 +41,22 @@ object SkinManagerImpl : SkinManager, GlobalManager {
     @Volatile
     private var uvNamespace = UVNamespace(
         CONFIG.namespace(),
-        "player_limb"
+        BedrockIds.limbDirectory(CONFIG.pack().useObfuscation())
     )
 
     private val limbs = PlayerLimbModels { uvNamespace }
 
+    /**
+     * 統合版用の手足の皮膚ジオメトリ。部位の定義から毎回同じ値になり、皮膚やリロードの順番に依存しない。
+     */
+    internal fun bedrockLimbs(): List<BedrockLimb> = limbs.specs.map {
+        BedrockLimbs.build(it, CONFIG.namespace(), CONFIG.pack().useObfuscation())
+    }
+
     private data class SkinModelData(
         private val model: UVModel,
-        val data: UVModelData
+        val data: UVModelData,
+        val profile: ModelProfile
     ) {
         var namespace = model.itemModelNamespace()
             private set
@@ -55,11 +66,12 @@ object SkinManagerImpl : SkinManager, GlobalManager {
         }
     }
 
-    private fun UVModel.asModelData(image: BufferedImage): SkinModelData {
+    private fun UVModel.asModelData(image: BufferedImage, profile: ModelProfile): SkinModelData {
         val data = write(image)
         return SkinModelData(
             this,
-            data
+            data,
+            profile
         )
     }
 
@@ -70,7 +82,8 @@ object SkinManagerImpl : SkinManager, GlobalManager {
         data.floats,
         data.flags,
         emptyList(),
-        colors.takeIf { it.isNotEmpty() }?.let { it + data.colors } ?: data.colors
+        colors.takeIf { it.isNotEmpty() }?.let { it + data.colors } ?: data.colors,
+        profile
     )
 
     private fun SkinModelData.asItem(resource: ArmorResource, item: ArmorItem? = null): TransformedItemStack {
@@ -81,19 +94,25 @@ object SkinManagerImpl : SkinManager, GlobalManager {
                 customModelData(item.type, item.tint, it, item.palette?.let { p -> ArmorManager.armor.colors()[p] })
             } ?: customModelData(item.type, item.tint)
         }
+        // 頭だけ、統合版で兜を被せるために、被せる兜のアイテムの id を strings の末尾に足す。
+        // 防具の select は strings の 0 番・1 番しか見ないので、Java 版の見た目は変わらない。
+        val strings = if (resource == ArmorResource.HELMET && item.itemId() != null) {
+            armorData.strings + "${BedrockIds.ARMOR_PREFIX}${item.itemId()}"
+        } else armorData.strings
         return PLATFORM.nms().createSkinItem(
             namespace,
             data.floats,
             data.flags,
-            armorData.strings,
-            armorData.colors + data.colors
+            strings,
+            armorData.colors + data.colors,
+            profile
         )
     }
 
     fun write(block: (UVByteBuilder) -> Unit) {
         val set = mutableSetOf<UVByteBuilder>()
 
-        val itemObf = PackObfuscator.order()
+        val useObfuscation = CONFIG.pack().useObfuscation()
         val modelObf = PackObfuscator.order()
         val textureName = PackObfuscator.order().let {
             UVTextureName(
@@ -104,7 +123,8 @@ object SkinManagerImpl : SkinManager, GlobalManager {
 
         fun UVModel.parseAsJson(armorResource: ArmorResource? = null): Collection<UVByteBuilder> {
             val model = modelName()
-            packName(itemObf.obfuscate(model))
+            // item_model の名前は部位の名前だけから決まる（難読化の出現順に依存しない）
+            packName(BedrockIds.limbPackName(useObfuscation, model))
             return asJson(UVLoadContext(
                 textureName,
                 modelObf::obfuscate
@@ -271,19 +291,19 @@ object SkinManagerImpl : SkinManager, GlobalManager {
             capeImage: BufferedImage?
         ) : this(
             profile,
-            limbs.head.asModelData(skinImage),
-            limbs.hip.asModelData(skinImage),
-            limbs.waist.asModelData(skinImage),
-            limbs.chest.asModelData(skinImage),
-            (if (profile.skin().slim) limbs.slimLeftArm else limbs.leftArm).asModelData(skinImage),
-            (if (profile.skin().slim) limbs.slimRightArm else limbs.rightArm).asModelData(skinImage),
-            limbs.leftLeg.asModelData(skinImage),
-            limbs.leftForeLeg.asModelData(skinImage),
-            limbs.rightLeg.asModelData(skinImage),
-            limbs.rightForeLeg.asModelData(skinImage),
-            (if (profile.skin().slim) limbs.slimLeftForeArm else limbs.leftForeArm).asModelData(skinImage).asItem(),
-            (if (profile.skin().slim) limbs.slimRightForeArm else limbs.rightForeArm).asModelData(skinImage).asItem(),
-            capeImage?.let { limbs.cape.asModelData(it).asItem() }
+            limbs.head.asModelData(skinImage, profile),
+            limbs.hip.asModelData(skinImage, profile),
+            limbs.waist.asModelData(skinImage, profile),
+            limbs.chest.asModelData(skinImage, profile),
+            (if (profile.skin().slim) limbs.slimLeftArm else limbs.leftArm).asModelData(skinImage, profile),
+            (if (profile.skin().slim) limbs.slimRightArm else limbs.rightArm).asModelData(skinImage, profile),
+            limbs.leftLeg.asModelData(skinImage, profile),
+            limbs.leftForeLeg.asModelData(skinImage, profile),
+            limbs.rightLeg.asModelData(skinImage, profile),
+            limbs.rightForeLeg.asModelData(skinImage, profile),
+            (if (profile.skin().slim) limbs.slimLeftForeArm else limbs.leftForeArm).asModelData(skinImage, profile).asItem(),
+            (if (profile.skin().slim) limbs.slimRightForeArm else limbs.rightForeArm).asModelData(skinImage, profile).asItem(),
+            capeImage?.let { limbs.cape.asModelData(it, profile).asItem() }
         )
         override fun profile(): ModelProfile = profile
         override fun head(armor: PlayerArmor): TransformedItemStack = head.asItem(ArmorResource.HELMET, armor.helmet())
@@ -317,7 +337,7 @@ object SkinManagerImpl : SkinManager, GlobalManager {
     override fun reload(pipeline: ReloadPipeline, zipper: PackZipper) {
         uvNamespace = UVNamespace(
             CONFIG.namespace(),
-            zipper.assets().obfuscate("player_limb")
+            BedrockIds.limbDirectory(CONFIG.pack().useObfuscation())
         )
         if (!CONFIG.module().playerAnimation) return
         write { resource ->

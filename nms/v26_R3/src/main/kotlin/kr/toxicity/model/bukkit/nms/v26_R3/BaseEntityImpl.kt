@@ -80,6 +80,10 @@ internal data class BaseEntityImpl(
         return handle().passengerPosition(dest)
     }
 
+    override fun passengerAttachment(dest: Vector3f): Vector3f {
+        return handle().passengerAttachment(dest)
+    }
+
     override fun platform(): PlatformEntity = delegate.wrap()
     override fun trackedBy(): Stream<PlatformPlayer> = delegate.trackedBy.stream().map { it.wrap() }
     override fun location(): PlatformLocation = delegate.location.wrap()

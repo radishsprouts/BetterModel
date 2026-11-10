@@ -95,18 +95,18 @@ public interface ModelDisplay extends Identifiable {
 
     /**
      * Spawns this display and sends initial entity data.
+     * 追加パケットと初期データは {@link #spawn(boolean, PacketBundler)} が同じ束に入れる。
      *
      * @param bundler the packet bundler
      * @since 1.15.2
      */
     default void spawnWithEntityData(@NotNull PacketBundler bundler) {
-        var visible = !invisible();
-        spawn(visible, bundler);
-        sendEntityData(visible, bundler);
+        spawn(!invisible(), bundler);
     }
 
     /**
      * Spawns this display, optionally showing the item.
+     * 追加パケットに続けて初期の entity data も同じ束に入れる（統合版はスポーン時点でメタデータが要る）。
      *
      * @param showItem true to show the item, false otherwise
      * @param bundler the packet bundler

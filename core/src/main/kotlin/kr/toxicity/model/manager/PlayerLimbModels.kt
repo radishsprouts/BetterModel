@@ -8,6 +8,7 @@
 package kr.toxicity.model.manager
 
 import kr.toxicity.library.dynamicuv.*
+import kr.toxicity.model.bedrock.BedrockLimbSpec
 
 /**
  * プレイヤーの皮膚の部位（頭・胴・腕・脚・マント）の定義。
@@ -25,6 +26,12 @@ internal class PlayerLimbModels(private val namespace: () -> UVNamespace) {
         val LIMB_OFFSET = ElementVector(0f, -3f, 0f)
         val CAPE_OFFSET = ElementVector(0f, -8f, 0.5f)
     }
+
+    /**
+     * 統合版用の皮膚ジオメトリを作るために控える、各部位の寸法と UV。
+     * 部位の定義（下の `val head = model(...)` など）より前に宣言して、定義の順に溜める。
+     */
+    val specs = ArrayList<BedrockLimbSpec>()
 
     /**
      * 部位の外側の層。
@@ -58,6 +65,13 @@ internal class PlayerLimbModels(private val namespace: () -> UVNamespace) {
         faces: Map<UVFace, UVPos>,
         outer: Outer? = null
     ): UVModel {
+        specs += BedrockLimbSpec(
+            name,
+            space.x(), space.y(), space.z(),
+            offset.x(), offset.y(), offset.z(),
+            faces.entries.associate { (face, pos) -> face.uvName() to (pos.x to pos.z) },
+            outer?.let { BedrockLimbSpec.Outer(it.inflate, it.x, it.z) }
+        )
         val size = ElementVector(space.x().toFloat(), space.y().toFloat(), space.z().toFloat())
         val position = offset.div(DIV_FACTOR)
         return UVModel(namespace, name).addElement(

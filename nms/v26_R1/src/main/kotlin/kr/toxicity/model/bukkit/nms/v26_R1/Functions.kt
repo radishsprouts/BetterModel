@@ -90,6 +90,13 @@ internal fun Entity.passengerPosition(dest: Vector3f): Vector3f {
     }
 }
 
+/** 乗り位置を、向きで回す前の値で返す（統合版の座席に使う）。 */
+internal fun Entity.passengerAttachment(dest: Vector3f): Vector3f {
+    return attachments.get(EntityAttachment.PASSENGER, 0, 0F).let { v ->
+        dest.set(v.x.toFloat(), v.y.toFloat(), v.z.toFloat())
+    }
+}
+
 // 毎 tick 呼ばれるため、Field.get ではなく MethodHandle（static final）で読む。
 private val DATA_ITEMS: MethodHandle = MethodHandles.lookup().unreflectGetter(
     SynchedEntityData::class.java.declaredFields.first {

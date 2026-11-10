@@ -10,6 +10,7 @@ package kr.toxicity.model.bukkit.nms.v26_R3
 import kr.toxicity.model.api.armor.ArmorItem
 import kr.toxicity.model.api.armor.PlayerArmor
 import net.minecraft.core.component.DataComponents
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.world.entity.EquipmentSlot
 import net.minecraft.world.item.component.DyedItemColor
 import net.minecraft.world.item.equipment.EquipmentAssets
@@ -41,7 +42,8 @@ internal data class PlayerArmorImpl(
             get(DataComponents.DYED_COLOR)?.rgb ?: if (it === EquipmentAssets.LEATHER) DyedItemColor.LEATHER_COLOR else 0xFFFFFF,
             it.identifier().path,
             trim?.pattern?.value()?.assetId?.path,
-            trim?.material?.value()?.paletteId?.path?.substringAfterLast('/')
+            trim?.material?.value()?.paletteId?.path?.substringAfterLast('/'),
+            BuiltInRegistries.ITEM.getKey(this.item).toString()
         )
     }?.orElse(null)
 }

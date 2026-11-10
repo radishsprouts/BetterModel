@@ -39,6 +39,12 @@ import java.util.function.Consumer;
 public interface NMS {
 
     /**
+     * 統合版用の座席の位置を、item の custom_model_data の strings に載せる時の接頭辞。
+     * KadoDisplayEntity がこの接頭辞で座席を読む（書式は {@code bm:seat:<x>;<y>;<z>}）。
+     */
+    String BEDROCK_SEAT_PREFIX = "bm:seat:";
+
+    /**
      * Creates a model display at the specified location.
      *
      * @param location the starting location
@@ -142,6 +148,16 @@ public interface NMS {
     @NotNull PlatformItemStack tint(@NotNull PlatformItemStack itemStack, int rgb);
 
     /**
+     * 統合版用の座席の位置を、アイテムの custom_model_data の strings の末尾に足す。
+     * 既に座席の指定があれば置き換える。Java 版の見た目は変わらない。
+     *
+     * @param itemStack 元のアイテム
+     * @param seat {@code x;y;z} 形式の座席の位置（{@code bm:seat:} の後ろに付く部分）
+     * @return 座席の指定を足したアイテム
+     */
+    @NotNull PlatformItemStack withBedrockSeat(@NotNull PlatformItemStack itemStack, @NotNull String seat);
+
+    /**
      * Adds a mount packet for an entity tracker to a bundler.
      *
      * @param registry the entity tracker registry
@@ -238,7 +254,24 @@ public interface NMS {
      * @return the transformed item stack
      * @since 1.15.2
      */
-    @NotNull TransformedItemStack createSkinItem(@NotNull String model, @NotNull List<Float> floats, @NotNull List<Boolean> flags, @NotNull List<String> strings, @NotNull List<Integer> colors);
+    default @NotNull TransformedItemStack createSkinItem(@NotNull String model, @NotNull List<Float> floats, @NotNull List<Boolean> flags, @NotNull List<String> strings, @NotNull List<Integer> colors) {
+        return createSkinItem(model, floats, flags, strings, colors, null);
+    }
+
+    /**
+     * 皮膚の持ち主のプロフィールを付けて、皮膚のアイテムを作る。
+     * 統合版は item_model を使えないため、皮膚の画像を得る元として PROFILE（textures の属性付き）を足す。
+     * Java 版は item_model が優先されるので見た目は変わらない。
+     *
+     * @param model モデルの名前
+     * @param floats custom_model_data の floats
+     * @param flags custom_model_data の flags
+     * @param strings custom_model_data の strings
+     * @param colors custom_model_data の colors
+     * @param profile 皮膚の持ち主のプロフィール。無ければ null
+     * @return 変換したアイテム
+     */
+    @NotNull TransformedItemStack createSkinItem(@NotNull String model, @NotNull List<Float> floats, @NotNull List<Boolean> flags, @NotNull List<String> strings, @NotNull List<Integer> colors, @Nullable ModelProfile profile);
 
     /**
      * Checks if the server is in online mode (either natively or via proxy).

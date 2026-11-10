@@ -8,7 +8,10 @@
 package kr.toxicity.model.bukkit.nms.v26_R3
 
 import ca.spottedleaf.moonrise.patches.chunk_system.level.entity.EntityLookup
+import com.google.common.collect.ImmutableMultimap
 import com.mojang.authlib.GameProfile
+import com.mojang.authlib.properties.Property
+import com.mojang.authlib.properties.PropertyMap
 import io.netty.channel.ChannelDuplexHandler
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelPromise
@@ -53,6 +56,7 @@ import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.item.ItemDisplayContext
 import net.minecraft.world.item.Items
 import net.minecraft.world.item.component.CustomModelData
+import net.minecraft.world.item.component.ResolvableProfile
 import net.minecraft.world.level.entity.LevelEntityGetter
 import net.minecraft.world.level.entity.LevelEntityGetterAdapter
 import net.minecraft.world.level.entity.PersistentEntitySectionManager
@@ -366,6 +370,16 @@ class NMSImpl : NMS {
         }.asBukkit().wrap()
     }
 
+    override fun withBedrockSeat(itemStack: PlatformItemStack, seat: String): PlatformItemStack {
+        val tag = "${NMS.BEDROCK_SEAT_PREFIX}$seat"
+        return itemStack.unwarp().asVanilla().apply {
+            set(DataComponents.CUSTOM_MODEL_DATA, get(DataComponents.CUSTOM_MODEL_DATA)?.let {
+                // 手足の item は防具の strings を先頭に持つので、座席は末尾に置く。
+                CustomModelData(it.floats, it.flags, it.strings.filterNot { s -> s.startsWith(NMS.BEDROCK_SEAT_PREFIX) } + tag, it.colors)
+            } ?: CustomModelData(emptyList(), emptyList(), listOf(tag), emptyList()))
+        }.asBukkit().wrap()
+    }
+
     override fun createHitBox(entity: BaseEntity, bone: RenderedBone, boundingBox: ModelBoundingBox, mountController: MountController, listener: HitBoxListener): HitBox? {
         val handle = entity.handle() as? Entity ?: return null
         return HitBoxImpl(
@@ -394,12 +408,28 @@ class NMSImpl : NMS {
 
     override fun profile(player: PlatformPlayer): ModelProfile = ModelGameProfile(getGameProfile((player.unwarp() as CraftPlayer).handle))
 
-    override fun createSkinItem(model: String, floats: List<Float>, flags: List<Boolean>, strings: List<String>, colors: List<Int>): TransformedItemStack {
+    override fun createSkinItem(model: String, floats: List<Float>, flags: List<Boolean>, strings: List<String>, colors: List<Int>, profile: ModelProfile?): TransformedItemStack {
         return VanillaItemStack(Items.PLAYER_HEAD).run {
             set(DataComponents.CUSTOM_MODEL_DATA, CustomModelData(floats, flags, strings, colors))
             set(DataComponents.ITEM_MODEL, Identifier.parse(model))
+            // 統合版は item_model を使えないので、皮膚の画像を得る元として PROFILE を足す（Java 版は item_model が優先）。
+            profile?.toResolvableProfile()?.let { set(DataComponents.PROFILE, it) }
             TransformedItemStack.of(asBukkit().wrap())
         }
+    }
+
+    /** textures の属性だけを持つ PROFILE を作る。皮膚が無い・組めない時は null。 */
+    private fun ModelProfile.toResolvableProfile(): ResolvableProfile? {
+        val raw = skin().raw
+        if (raw.isEmpty()) return null
+        val info = info()
+        return runCatching {
+            ResolvableProfile.createResolved(GameProfile(
+                info.id(),
+                info.name() ?: "",
+                PropertyMap(ImmutableMultimap.of("textures", Property("textures", raw)))
+            ))
+        }.getOrNull()
     }
 
     override fun isProxyOnlineMode(): Boolean = ONLINE_MODE
