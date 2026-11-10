@@ -10,9 +10,11 @@ package kr.toxicity.model.manager
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import kr.toxicity.model.api.bone.BoneItemMapper
+import kr.toxicity.model.api.bone.BoneTags
 import kr.toxicity.model.api.data.ModelAsset
 import kr.toxicity.model.api.data.blueprint.BlueprintElement
 import kr.toxicity.model.api.data.blueprint.BlueprintJson
+import kr.toxicity.model.api.data.blueprint.BlueprintLoadContext
 import kr.toxicity.model.api.data.blueprint.ModelBlueprint
 import kr.toxicity.model.api.data.renderer.ModelRenderer
 import kr.toxicity.model.api.data.renderer.RendererGroup
@@ -22,6 +24,7 @@ import kr.toxicity.model.api.manager.ModelManager
 import kr.toxicity.model.api.pack.PackBuilder
 import kr.toxicity.model.api.pack.PackZipper
 import kr.toxicity.model.api.platform.PlatformNamespace
+import kr.toxicity.model.bedrock.*
 import kr.toxicity.model.util.*
 import net.kyori.adventure.text.format.NamedTextColor.*
 import java.io.File
@@ -99,8 +102,8 @@ object ModelManagerImpl : ModelManager, GlobalManager {
             }
     }
 
-    private fun loadModels(pipeline: ReloadPipeline, zipper: PackZipper, tables: Tables) {
-        ModelPipeline(zipper).run {
+    private fun loadModels(pipeline: ReloadPipeline, zipper: PackZipper, tables: Tables, bedrock: BedrockCollector?) {
+        ModelPipeline(zipper, bedrock).run {
             if (CONFIG.module().model) addModelTo(
                 tables.generalMap,
                 importModels(ModelRenderer.Type.GENERAL, pipeline, DATA_FOLDER.getOrCreateDirectory("models") { folder ->
@@ -131,10 +134,17 @@ object ModelManagerImpl : ModelManager, GlobalManager {
     )
 
     private class ModelPipeline(
-        private val zipper: PackZipper
+        private val zipper: PackZipper,
+        private val bedrock: BedrockCollector?
     ) {
 
         private val textures = zipper.assets().bettermodel().textures()
+
+        /** 難読化が有効か。骨の item_model の置き場所と名前が変わる（[BedrockIds]）。 */
+        private val useObfuscation = CONFIG.pack().useObfuscation()
+
+        /** 骨の items の JSON を置くフォルダ。難読化の出現順に依存しない。 */
+        private val itemDirectory = BedrockIds.boneItemDirectory(useObfuscation)
 
         private val modernModel = ModelBuilder(
             namespace = zipper.assets().obfuscate("model"),
@@ -164,15 +174,24 @@ object ModelManagerImpl : ModelManager, GlobalManager {
         ) {
             val (size, type, blueprint) = importedModel
             val context = blueprint.context()
+            val bedrockTextures = ConcurrentHashMap<Int, BedrockTexture>()
             targetMap[blueprint.name] = blueprint.toRenderer(type) render@ { group ->
                 if (!context.canBeRendered()) return@render null
                 modernModel.run {
                     val json = group.buildModernJson(obfuscator, context)
                     val itemModel = group.buildMeshItemModel(context)
                     if (json != null || itemModel != null) {
-                        group.jsonName(context)
-                            .also { name -> build("$name.json", json ?: emptyList(), itemModel, if (json != null) size / json.size else 0) }
-                            .let { "$namespace/$it" }
+                        // item_model の path はモデル名と骨の名前だけから決まる（出現順に依存しない）
+                        val jsonName = group.jsonName(context)
+                        val boneKey = BedrockIds.boneKey(context.name(), group.name().rawName())
+                        val itemName = BedrockIds.boneItemName(useObfuscation, boneKey, jsonName)
+                        build("$itemName.json", json ?: emptyList(), itemModel, if (json != null) size / json.size else 0)
+                        bedrock?.let {
+                            collectBedrock(it, context, group, BedrockIds.boneItemModel(CONFIG.namespace(), useObfuscation, boneKey, jsonName)) { index ->
+                                bedrockTextures.computeIfAbsent(index) { i -> BedrockTexture.of(context.texture(i), context.resolution()) }
+                            }
+                        }
+                        "$itemDirectory/$itemName"
                     } else null
                 }
             }.apply {
@@ -196,12 +215,38 @@ object ModelManagerImpl : ModelManager, GlobalManager {
             }
         }
 
+        /**
+         * 骨1つ分の統合版用の geometry を作り、集める。失敗しても Java 版のパックの生成は止めない。
+         */
+        private fun collectBedrock(
+            collector: BedrockCollector,
+            context: BlueprintLoadContext,
+            group: BlueprintElement.Group,
+            itemModel: String,
+            texture: (Int) -> BedrockTexture
+        ) {
+            runCatching {
+                val bone = BedrockGeometry.build(BedrockBoneSource(
+                    context.name(),
+                    group.name().rawName(),
+                    // origin() は X・Z を反転した値を返す。Java 版が使う生の origin に戻す
+                    group.origin().invertXZ(),
+                    group.scale(),
+                    group.name().tagged(BoneTags.GLOW),
+                    group.children().filterIsInstance<BlueprintElement.Cube>(),
+                    group.children().filterIsInstance<BlueprintElement.Mesh>(),
+                    texture
+                )) ?: return@runCatching
+                collector.add(BedrockBoneEntry(context.name(), group.name().rawName(), itemModel, bone))
+            }.handleFailure { "統合版用のモデルを作れませんでした: ${context.name()} / ${group.name().rawName()}" }
+        }
+
         inner class ModelBuilder(
             val namespace: String,
             val builder: ModelBuilder.() -> PackBuilder,
             private val onBuild: ModelBuilder.(String, List<BlueprintJson>, JsonObject?, Long) -> Unit,
         ) {
-            val items = zipper.assets().bettermodel().items().resolve(namespace)
+            val items = zipper.assets().bettermodel().items().resolve(itemDirectory)
             val models = builder()
             val obfuscator = textures.obfuscator().withModels(models.obfuscator())
 
@@ -256,8 +301,11 @@ object ModelManagerImpl : ModelManager, GlobalManager {
     override fun reload(pipeline: ReloadPipeline, zipper: PackZipper) {
         // 新しい表に作ってから差し替える。失敗した時は古い表がそのまま残る
         val newTables = Tables()
-        loadModels(pipeline, zipper, newTables)
+        val bedrock = if (CONFIG.bedrock().enabled()) BedrockCollector() else null
+        loadModels(pipeline, zipper, newTables, bedrock)
         tables = newTables
+        // 統合版用の出力は、リロードの最後に1回だけ書く（tick には載せない）。失敗してもリロードは止めない
+        bedrock?.let { BedrockExporter.export(it, SkinManagerImpl.bedrockLimbs()) }
     }
 
     override fun model(name: String): ModelRenderer? = tables.generalView[name]

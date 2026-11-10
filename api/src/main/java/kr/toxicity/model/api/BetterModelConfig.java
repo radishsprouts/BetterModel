@@ -7,6 +7,7 @@
 
 package kr.toxicity.model.api;
 
+import kr.toxicity.model.api.config.BedrockConfig;
 import kr.toxicity.model.api.config.DebugConfig;
 import kr.toxicity.model.api.config.IndicatorConfig;
 import kr.toxicity.model.api.config.ModuleConfig;
@@ -67,6 +68,14 @@ public interface BetterModelConfig {
      * @since 1.15.2
      */
     @NotNull PackConfig pack();
+
+    /**
+     * 統合版（Bedrock、Geyser 経由）向けの出力の設定を返します。
+     *
+     * @return 統合版の設定
+     * @since 3.7.0
+     */
+    @NotNull BedrockConfig bedrock();
 
     /**
      * Checks if metrics collection is enabled.

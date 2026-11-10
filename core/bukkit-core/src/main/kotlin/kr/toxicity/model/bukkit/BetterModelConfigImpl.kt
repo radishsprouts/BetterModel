@@ -9,6 +9,7 @@ package kr.toxicity.model.bukkit
 
 import kr.toxicity.model.api.BetterModelConfig
 import kr.toxicity.model.api.bukkit.platform.BukkitAdapter
+import kr.toxicity.model.api.config.BedrockConfig
 import kr.toxicity.model.api.config.DebugConfig
 import kr.toxicity.model.api.config.IndicatorConfig
 import kr.toxicity.model.api.config.ModuleConfig
@@ -38,6 +39,12 @@ class BetterModelConfigImpl(yaml: ConfigurationSection) : BetterModelConfig {
     private val pack = yaml.getConfigurationSection("pack")?.let {
         PackConfig.from(it::getBoolean)
     } ?: PackConfig.DEFAULT
+    private val bedrock = yaml.getConfigurationSection("bedrock")?.let {
+        BedrockConfig(
+            it.getBoolean("enabled", true),
+            it.getString("output-folder")?.trim()?.takeIf(String::isNotEmpty) ?: BedrockConfig.DEFAULT_OUTPUT_FOLDER
+        )
+    } ?: BedrockConfig.DEFAULT
     private val metrics = yaml.getBoolean("metrics", true)
     private val sightTrace = yaml.getBoolean("sight-trace", true)
     private val mergeWithExternalResources = yaml.getBoolean("merge-with-external-resources", true)
@@ -83,6 +90,7 @@ class BetterModelConfigImpl(yaml: ConfigurationSection) : BetterModelConfig {
     override fun module(): ModuleConfig = module
     override fun pack(): PackConfig = pack
     override fun item(): Supplier<PlatformItemStack> = item
+    override fun bedrock(): BedrockConfig = bedrock
     override fun metrics(): Boolean = metrics
     override fun sightTrace(): Boolean = sightTrace
     override fun mergeWithExternalResources(): Boolean = mergeWithExternalResources
