@@ -63,7 +63,7 @@ fun <T : Any> httpClient(block: HttpClient.() -> T): HttpUtil.Result<T> = HttpUt
 }
 
 /**
- * The default timeout of an HTTP request. A caller can override it in the builder.
+ * HTTP 要求の既定のタイムアウト。呼び出し側は builder の中で上書きできる。
  */
 private val HTTP_REQUEST_TIMEOUT = Duration.ofSeconds(30)
 

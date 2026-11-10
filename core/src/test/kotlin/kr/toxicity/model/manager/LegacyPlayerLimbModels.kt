@@ -10,8 +10,8 @@ package kr.toxicity.model.manager
 import kr.toxicity.library.dynamicuv.*
 
 /**
- * The hand-written definitions used before [PlayerLimbModels] generated them.
- * It is kept only as the reference of [PlayerLimbModelsTest].
+ * [PlayerLimbModels] が生成する前に使っていた手書きの定義。
+ * [PlayerLimbModelsTest] の比較の基準としてだけ残している。
  */
 object LegacyPlayerLimbModels {
 

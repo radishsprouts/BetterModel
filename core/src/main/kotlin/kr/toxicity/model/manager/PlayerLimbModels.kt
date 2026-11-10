@@ -10,11 +10,10 @@ package kr.toxicity.model.manager
 import kr.toxicity.library.dynamicuv.*
 
 /**
- * Definitions of the player's skin parts (the head, the body, the arms, the legs and the cape).
- * Every part except the cape is made of an inner layer and an outer (second skin) layer
- * which uses the same shape inflated a bit and the texture area shifted by a constant.
+ * プレイヤーの皮膚の部位（頭・胴・腕・脚・マント）の定義。
+ * マント以外の部位は、内側の層と、同じ形を少し膨らませてテクスチャの領域を一定量ずらした外側の層（スキンの2層目）でできている。
  *
- * @param namespace the namespace supplier
+ * @param namespace 名前空間の供給元
  */
 internal class PlayerLimbModels(private val namespace: () -> UVNamespace) {
 
@@ -28,11 +27,11 @@ internal class PlayerLimbModels(private val namespace: () -> UVNamespace) {
     }
 
     /**
-     * The outer layer of a part.
+     * 部位の外側の層。
      *
-     * @param inflate the inflation of the shape
-     * @param x the horizontal shift of the texture area
-     * @param z the vertical shift of the texture area
+     * @param inflate 形を膨らませる量
+     * @param x テクスチャの領域の横方向のずれ
+     * @param z テクスチャの領域の縦方向のずれ
      */
     private class Outer(val inflate: Float, val x: Int, val z: Int)
 

@@ -171,15 +171,15 @@ object SkinManagerImpl : SkinManager, GlobalManager {
 
     override fun complete(profile: ModelProfile.Uncompleted): CompletableFuture<out SkinData> {
         if (profile.info() == ModelProfileInfo.UNKNOWN) return CompletableFuture.completedFuture(fallback)
-        // Concurrent requests share one future. A failed (or null) future is evicted by the cache itself.
+        // 同時の要求は1つの Future を共有する。失敗または null で完了した Future はキャッシュが自分で外す。
         return profileCache.get(profile.info().id) { _, _ -> load(profile) }
             .handle<SkinData> { skin, _ -> skin ?: fallback }
     }
 
     /**
-     * Loads the skin of this profile.
-     * The returned future fails if the skin can't be read, and completes with null if the profile has no skin;
-     * in both cases the cache doesn't keep it, and [complete] falls back to the default skin.
+     * このプロフィールの皮膚を読み込む。
+     * 皮膚を読めなければ失敗で、プロフィールに皮膚が無ければ null で完了する。
+     * どちらもキャッシュには残らず、[complete] が既定の皮膚へ戻す。
      */
     @Suppress("UNCHECKED_CAST")
     private fun load(profile: ModelProfile.Uncompleted): CompletableFuture<SkinDataImpl> {

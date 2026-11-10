@@ -41,6 +41,7 @@ public interface PlayerManager extends Manager {
      *
      * @param player the player
      * @return the channel handler
+     * @throws IllegalStateException オフラインのプレイヤーで、まだ登録されていない場合（オフラインのプレイヤーには注入しない）
      * @since 1.15.2
      */
     @NotNull PlayerChannelHandler player(@NotNull PlatformPlayer player);

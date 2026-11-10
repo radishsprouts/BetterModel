@@ -24,8 +24,7 @@ object ProfileManagerImpl : ProfileManager, GlobalManager {
     private val gson = GsonBuilder().create()
 
     /**
-     * The built-in supplier. It is also the one a compatibility hook (e.g. SkinsRestorer)
-     * delegates to when it has nothing to provide.
+     * 組み込みの supplier。互換フック（SkinsRestorer など）が提供できない時の委譲先でもある。
      */
     val defaultSupplier: ModelProfileSupplier by lazy {
         if (PLATFORM.nms().isProxyOnlineMode) DefaultHttpModelProfileSupplier() else HttpModelProfileSupplier()
@@ -74,7 +73,7 @@ object ProfileManagerImpl : ProfileManager, GlobalManager {
     }
 
     override fun start() {
-        // A hook that registered its own supplier before this point must not be overwritten.
+        // ここより前にフックが登録した supplier は上書きしない。
         if (supplier == null) supplier = defaultSupplier
     }
 

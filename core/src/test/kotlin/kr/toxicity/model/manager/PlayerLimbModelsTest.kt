@@ -15,8 +15,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Checks that the generated definitions produce exactly the same models and the same texture data
- * as the hand-written ones.
+ * 生成した定義が、手書きの定義とまったく同じモデルとテクスチャデータを出すことを確かめる。
  */
 class PlayerLimbModelsTest {
 

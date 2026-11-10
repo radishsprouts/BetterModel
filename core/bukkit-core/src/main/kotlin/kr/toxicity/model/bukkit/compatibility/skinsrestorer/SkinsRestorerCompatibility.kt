@@ -52,7 +52,7 @@ class SkinsRestorerCompatibility : Compatibility {
                     )
                 }.orElse(null)
         }.thenCompose { profile ->
-            // No skin from SkinsRestorer: leave it to the built-in supplier.
+            // SkinsRestorer に皮膚が無い時は、組み込みの supplier に任せる。
             if (profile != null) CompletableFuture.completedFuture(profile)
             else ProfileManagerImpl.defaultSupplier.supply(info).complete()
         }
