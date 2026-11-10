@@ -185,7 +185,7 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
     private void updateLocation() {
         var loc = sourceEntity().location();
         var previous = this.location;
-        // A world change must be applied even if the coordinates are the same.
+        // 座標が同じでも、ワールドが変わった場合は反映する。
         if (previous.world().equals(loc.world()) && previous.distanceSquared(loc) < MathUtil.VECTOR_COMPARISON_EPSILON_SQ) return;
         this.location = loc;
         pipeline.forEach(bone -> bone.applyAtDisplay(BonePredicate.TRUE, display -> display.syncPosition(loc)));

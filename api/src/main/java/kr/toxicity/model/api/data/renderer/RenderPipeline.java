@@ -388,9 +388,9 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
     /**
      * Updates bone animations and ticks the model hierarchy.
      *
-     * <p>This method only performs the logical animation tick without resolving IK
-     * or dispatching transform updates to players. To solve IK and apply the new keyframe,
-     * call {@link #sync(long)}, then call {@link #send(AnimationBundler, long, int)} for each receiver.
+     * <p>このメソッドはアニメーションの論理的な進行だけを行い、IK の解決も
+     * プレイヤーへの変形の送信も行いません。IK を解いて新しいキーフレームを反映するには
+     * {@link #sync(long)} を呼び、受け手ごとに {@link #send(AnimationBundler, long, int)} を呼びます。
      *
      * <pre>{@code
      * if (pipeline.tick()) {
@@ -401,7 +401,7 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
      * }
      * }</pre>
      *
-     * @return {@code true} if any bone or animation updates occurred, {@code false} otherwise
+     * @return ボーンまたはアニメーションに更新があれば {@code true}
      * @see #sync(long)
      * @since 3.7.0
      */
@@ -410,13 +410,13 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
     }
 
     /**
-     * Solves inverse kinematics (IK) and applies the latest keyframe of every bone, without creating any packet.
+     * 逆運動学（IK）を解き、全ボーンの最新キーフレームを反映します（パケットは作りません）。
      *
-     * <p>This is typically invoked immediately after {@link #tick()} reports an animation update.
-     * Bones changed by this call are stamped with the given version, so that {@link #send(AnimationBundler, long, int)}
-     * can send only what a receiver does not have yet.
+     * <p>通常は {@link #tick()} がアニメーションの更新を返した直後に呼びます。
+     * この呼び出しで変化したボーンには指定した版が記録され、
+     * {@link #send(AnimationBundler, long, int)} は受け手がまだ持っていない分だけを送れます。
      *
-     * @param version monotonic version number (must be greater than every previous one)
+     * @param version 単調増加の版番号（過去のどの版よりも大きいこと）
      * @see #tick()
      * @since 3.7.0
      */
@@ -426,16 +426,16 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
     }
 
     /**
-     * Bundles the bone transformations changed after the given version.
+     * 指定した版より後に変化したボーンの変形をバンドルにまとめます。
      *
      * <pre>{@code
      * AnimationBundler bundler = pipeline.createAnimationBundler();
      * pipeline.send(bundler, lastSentVersion, 2);
      * }</pre>
      *
-     * @param bundler the animation packet bundler to receive transformation data
-     * @param sinceVersion the last version that the receiver already has
-     * @param minDuration minimum interpolation duration in ticks, to cover the frames skipped by the receiver
+     * @param bundler 変形データを受け取るアニメーションパケットのバンドラー
+     * @param sinceVersion 受け手がすでに持っている最後の版
+     * @param minDuration 補間時間の下限（ティック）。受け手が飛ばしたフレーム分を埋める
      * @throws NullPointerException if {@code bundler} is null
      * @see #sync(long)
      * @since 3.7.0

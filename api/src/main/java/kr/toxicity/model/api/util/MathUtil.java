@@ -171,9 +171,9 @@ public final class MathUtil {
     }
 
     /**
-     * Creates epsilon-based hashcode of given float.
+     * 指定した float の許容誤差を使ったハッシュコードを作ります。
      * <p>
-     * Values are rounded to the nearest epsilon bucket, so that {@link #isSameBucket(float, float)} and this hashcode agree.
+     * 値は最も近い許容誤差の区間へ丸めるので、{@link #isSameBucket(float, float)} とこのハッシュコードは一致します。
      * </p>
      * @param value value
      * @return hashcode
@@ -183,14 +183,14 @@ public final class MathUtil {
     }
 
     /**
-     * Checks two floats belong to the same epsilon bucket.
+     * 2つの float が許容誤差の同じ区間に入るかを調べます。
      * <p>
-     * Unlike {@link #isSimilar(float, float)}, this is an equivalence relation, so it can be used
-     * to implement {@code equals} consistently with {@link #similarHashCode(float)}.
+     * {@link #isSimilar(float, float)} と違って同値関係になるので、
+     * {@link #similarHashCode(float)} と矛盾しない {@code equals} の実装に使えます。
      * </p>
      * @param a a
      * @param b b
-     * @return same bucket or not
+     * @return 同じ区間か
      */
     public static boolean isSameBucket(float a, float b) {
         return similarHashCode(a) == similarHashCode(b);

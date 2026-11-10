@@ -49,8 +49,14 @@ public interface FloatFunction<T> {
     }
 
     /**
-     * Memoize this function
-     * @return memoized function
+     * この関数の結果を許容誤差の区間ごとに覚えさせます。
+     * <p>
+     * 覚えた表は、返した関数が到達できる間だけ生きます。今は {@code ModelKeyframe#point} が作る
+     * {@code VectorPoint} が持ち、モデルの読み込み中（{@code AnimationGenerator#generate}）にだけ使われ、
+     * その後は焼き込み済みの {@code AnimationKeyframe} だけが残るので、表は読み込みの完了で到達不能になり回収されます。
+     * 並列のストリームから呼ばれるため、表はスレッドセーフです。
+     * </p>
+     * @return 結果を覚える関数
      */
     default @NotNull FloatFunction<T> memoize() {
         var map = new ConcurrentHashMap<Integer, T>();

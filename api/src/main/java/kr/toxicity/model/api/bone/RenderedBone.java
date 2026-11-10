@@ -362,10 +362,10 @@ public final class RenderedBone implements BoneEventHandler {
     }
 
     /**
-     * Sends the transformation of the given state if it has been changed since the last call.
-     * Used by per-player animation, which is not throttled.
-     * @param uuid player uuid (null for the global state)
-     * @param bundler bundler
+     * 前回の呼び出し以降に変化していれば、指定した状態の変形を送ります。
+     * 間引きの対象にならないプレイヤー個別アニメーションが使います。
+     * @param uuid プレイヤーの UUID（全体の状態なら null）
+     * @param bundler バンドラー
      */
     public void sendTransformation(@Nullable UUID uuid, @NotNull AnimationBundler bundler) {
         var handler = state(uuid);
@@ -373,19 +373,19 @@ public final class RenderedBone implements BoneEventHandler {
     }
 
     /**
-     * Applies the latest keyframe of the global state to the current movement, without creating any packet.
-     * @param version monotonic version number given by the ticker
-     * @return the movement has been changed or not
+     * 全体の状態の最新キーフレームを現在の姿勢へ反映します（パケットは作りません）。
+     * @param version ティッカーが渡す単調増加の版番号
+     * @return 姿勢が変化したか
      */
     public boolean syncTransformation(long version) {
         return globalState.syncCurrent(version);
     }
 
     /**
-     * Sends the latest transformation of the global state if it has been changed after the given version.
-     * @param sinceVersion the last version that the receiver already has
-     * @param minDuration minimum interpolation duration in ticks (to cover skipped frames)
-     * @param bundler bundler
+     * 指定した版より後に変化していれば、全体の状態の最新の変形を送ります。
+     * @param sinceVersion 受け手がすでに持っている最後の版
+     * @param minDuration 補間時間の下限（ティック。飛ばしたフレーム分を埋める）
+     * @param bundler バンドラー
      */
     public void sendTransformation(long sinceVersion, int minDuration, @NotNull AnimationBundler bundler) {
         if (globalState.changedVersion > sinceVersion) globalState.emitTransformation(minDuration, bundler);
@@ -741,7 +741,7 @@ public final class RenderedBone implements BoneEventHandler {
         }
 
         private @NotNull BoneMovement interpolate(float progress, @NotNull BoneMovement cache) {
-            // Optimistic read: the cache is overwritten on retry, so a torn read is never exposed.
+            // 楽観読み取り: 検証に失敗したら cache を書き直すので、途中まで更新された値が外へ出ることはない。
             var stamp = lock.tryOptimisticRead();
             var result = updateCurrent.get() ? cache.set(current) : before.lerp(current, progress, cache);
             if (lock.validate(stamp)) return result;

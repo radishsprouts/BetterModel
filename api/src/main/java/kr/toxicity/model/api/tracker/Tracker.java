@@ -71,10 +71,10 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
     });
 
     /**
-     * A group of trackers ticked by one periodic task.
+     * 1つの周期タスクで tick されるトラッカーの集まり。
      * <p>
-     * Trackers are keyed by their unique id (a tracker is compared by identity, not by its model name),
-     * so any number of trackers of the same model can live in a shard.
+     * トラッカーは固有の ID を鍵にして保持する（トラッカーはモデル名ではなく同一性で区別する）ため、
+     * 同じモデルのトラッカーをシャードにいくつでも入れられる。
      * </p>
      */
     private static final class TrackerShard {
@@ -86,7 +86,7 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
         private long lastTick = 0L;
 
         private TrackerShard(int index) {
-            // Shift the start time of each shard so that the shards do not tick at the same moment.
+            // シャードが同時に tick しないよう、シャードごとに開始時刻をずらす。
             EXECUTOR.scheduleAtFixedRate(
                 this::tickAll,
                 PERIOD_MICROS + PERIOD_MICROS * index / SHARD_COUNT,
@@ -97,8 +97,8 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
 
         private void tickAll() {
             var now = System.nanoTime();
-            // scheduleAtFixedRate runs back-to-back to catch up after a slow tick. Skip those runs instead,
-            // otherwise the animation fast-forwards and the load spikes even more.
+            // scheduleAtFixedRate は遅れた後に連続で追いつき実行する。その実行は捨てる。
+            // 追いつくとアニメーションが早送りになり、負荷もさらに跳ね上がる。
             if (lastTick != 0L && now - lastTick < PERIOD_NANOS / 2) return;
             lastTick = now;
             for (Tracker tracker : trackers.values()) {
@@ -234,7 +234,7 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
     }
 
     private void start() {
-        // Always take the lock: checking "scheduled" outside of it races with shutdownIfIdle().
+        // 必ずロックを取る。ロックの外で scheduled を見ると shutdownIfIdle() と競合する。
         synchronized (this) {
             if (isClosed.get() || !scheduled.compareAndSet(false, true)) return;
             if (firstStart.compareAndSet(false, true)) {
@@ -253,8 +253,8 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
     }
 
     /**
-     * Stops the tracker only if nobody is watching it.
-     * The check is done inside of the lock, so that it cannot race with {@link #start()}.
+     * 誰も見ていない場合に限ってトラッカーを止める。
+     * 判定はロックの中で行うので、{@link #start()} と競合しない。
      */
     private void shutdownIfIdle() {
         synchronized (this) {
@@ -625,7 +625,7 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
             scriptProcessor.addAnimation(animation.name(), script.iterator(modifier), modifier, () -> {});
             match = true;
         }
-        // Every matched bone registers the same task, but it must run only once.
+        // 一致した全ボーンに同じタスクが登録されるが、実行は1回だけにする。
         var once = new AtomicBoolean();
         Runnable onceTask = () -> {
             if (once.compareAndSet(false, true)) removeTask.run();

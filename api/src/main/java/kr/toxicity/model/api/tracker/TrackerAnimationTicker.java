@@ -36,9 +36,9 @@ import java.util.function.Consumer;
  * to viewing players and handling isolated per-player animation overrides with reference counting.
  * </p>
  * <p>
- * The animation state always advances every frame. Only the packet dispatch is thinned out by the distance of
- * each player (level of detail): a player far from the model receives the latest pose less often,
- * and the interpolation duration is extended to cover the skipped frames.
+ * アニメーションの状態は毎フレーム進める。間引くのはパケットの送信だけで、プレイヤーごとの距離で決める
+ * （LOD）。モデルから遠いプレイヤーには最新の姿勢をより低い頻度で送り、
+ * 飛ばしたフレーム分は補間時間を延ばして埋める。
  * </p>
  * <p>Example:</p>
  * <pre>{@code
@@ -56,7 +56,7 @@ final class TrackerAnimationTicker {
     private final Map<UUID, Viewer> viewers = new HashMap<>();
     private final Map<UUID, PerPlayerCache> perPlayerAnimationCache = new ConcurrentHashMap<>();
 
-    // Only the tracker's shard thread touches these.
+    // トラッカーのシャードのスレッドだけが触る。
     private long version = 0L;
     private long tickStamp = 0L;
     private final int phase = ThreadLocalRandom.current().nextInt(64);
@@ -74,8 +74,8 @@ final class TrackerAnimationTicker {
     }
 
     /**
-     * Makes the next tick send the changed pose to every viewer at once, ignoring the level of detail.
-     * Used when an animation is played or stopped by an API call.
+     * 次の tick で、LOD を無視して変化した姿勢を全員へ一度に送らせる。
+     * API の呼び出しでアニメーションを再生・停止した時に使う。
      *
      * @since 3.7.0
      */
@@ -86,8 +86,8 @@ final class TrackerAnimationTicker {
     /**
      * Advances animation playback in the render pipeline and dispatches animation packets to viewers.
      *
-     * @param frame the current tracker frame
-     * @param location the current tracker location for distance-based LOD
+     * @param frame 現在のトラッカーのフレーム
+     * @param location 距離による LOD に使うトラッカーの現在位置
      * @since 3.7.0
      */
     void tick(long frame, @NotNull PlatformLocation location) {
@@ -146,14 +146,14 @@ final class TrackerAnimationTicker {
         }
         var config = BetterModel.config();
         var lod = !forced && config.animationLod();
-        // The distance is calculated once per Minecraft tick.
+        // 距離の計算は 1 MC ティックに 1 回。
         var refresh = forced || frame % Tracker.MINECRAFT_TICK_MULTIPLIER == 0;
         var stamp = ++tickStamp;
         Long2ReferenceOpenHashMap<AnimationBundler> bundlers = null;
         for (PlayerChannelHandler channel : viewedPlayers) {
             var viewer = viewers.get(channel.uuid());
             if (viewer == null) {
-                // A new viewer has received the current pose by the spawn packet.
+                // 新しい視聴者は、スポーンのパケットで現在の姿勢を受け取っている。
                 viewer = new Viewer(changed ? version - 1 : version);
                 viewers.put(channel.uuid(), viewer);
                 viewer.step = lod ? stepOf(config, channel, location) : 1;
@@ -194,9 +194,9 @@ final class TrackerAnimationTicker {
     }
 
     private static final class Viewer {
-        /** The last version of the pose sent to this viewer. */
+        /** この視聴者へ送った姿勢の最後の版。 */
         private long sent;
-        /** Frames to put together into one packet. */
+        /** 1回の送信にまとめるフレーム数。 */
         private int step = 1;
         private long stamp;
 

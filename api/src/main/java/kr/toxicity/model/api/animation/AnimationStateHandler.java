@@ -135,7 +135,7 @@ public final class AnimationStateHandler<T extends Timed> {
     }
 
     private boolean updateAnimation() {
-        // removeTask may re-enter this handler (play / stop another animation), so it must run outside of the lock.
+        // removeTask はこのハンドラーへ再入しうる（別のアニメーションの再生・停止）ため、ロックの外で実行する。
         List<Runnable> finished = null;
         boolean result;
         synchronized (animators) {
@@ -185,7 +185,7 @@ public final class AnimationStateHandler<T extends Timed> {
                 try {
                     task.run();
                 } catch (Throwable throwable) {
-                    LogUtil.handleException("Animation remove task has been failed.", throwable);
+                    LogUtil.handleException("アニメーションの終了処理に失敗しました。", throwable);
                 }
             }
         }
@@ -194,7 +194,7 @@ public final class AnimationStateHandler<T extends Timed> {
 
     private boolean updateKeyframe(@NotNull Iterator<TreeIterator> iterator, @NotNull TreeIterator next) {
         if (!next.hasNext()) {
-            // Remove first, then run the task after the lock has been released.
+            // 先に取り除き、タスクはロックを手放した後に実行する。
             iterator.remove();
             if (currentIterator == next) currentIterator = null;
             next.finished = true;

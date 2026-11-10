@@ -57,8 +57,8 @@ public final class TrackerBundlerSet {
      */
     void send() {
         if (tickBundler.isNotEmpty()) {
-            // Rotation / shadow packets go to every tracking player, even if the view filter rejects it for now,
-            // so that the model is not stale when the player sees it again.
+            // 回転・影のパケットは、視界の判定で今は外れていても追跡中の全員へ送る。
+            // 再び見えた時にモデルが古いままにならないようにするため。
             pipeline.forEachAllPlayer(tickBundler::send);
             tickBundler = pipeline.createBundler();
         }

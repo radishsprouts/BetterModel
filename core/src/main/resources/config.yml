@@ -94,16 +94,16 @@ player-hide-delay: 3
 # Higher values can reduce network overhead but may increase perceived latency. 0 to disable.
 packet-bundling-size: 16
 
-# Reduces the animation packets sent to players far from a model (level of detail).
-# A skipped frame is not lost: the next packet is interpolated over the skipped time.
+# モデルから遠いプレイヤーへ送るアニメーションパケットを減らします（LOD）。
+# 飛ばしたフレームは失われず、次のパケットで飛ばした時間をかけて補間されます。
 animation-lod: true
 
-# Distance in blocks where the packet rate starts to be reduced, and the number of tracker frames (25ms each)
-# put together into one packet there. 2 means half the packets.
+# パケットを減らし始める距離（ブロック）と、そこで何フレーム（1フレーム 25ms）を1回にまとめるか。
+# 2 ならパケットが半分になります。
 animation-lod-near-distance: 16
 animation-lod-near-step: 2
 
-# Distance in blocks where the packet rate is reduced further, and the step there. 4 means a quarter of the packets.
+# さらに減らす距離（ブロック）と、そこでの間引き幅。4 ならパケットが 1/4 になります。
 animation-lod-far-distance: 32
 animation-lod-far-step: 4
 
