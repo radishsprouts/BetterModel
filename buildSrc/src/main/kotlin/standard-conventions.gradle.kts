@@ -1,7 +1,6 @@
 plugins {
     java
     kotlin("jvm")
-    id("org.jetbrains.dokka")
     id("dev.yumi.gradle.licenser")
 }
 
@@ -45,11 +44,4 @@ java {
 
 kotlin {
     jvmToolchain(JAVA_VERSION)
-}
-
-dokka {
-    moduleName = project.name
-    dokkaSourceSets.configureEach {
-        displayName = project.name
-    }
 }

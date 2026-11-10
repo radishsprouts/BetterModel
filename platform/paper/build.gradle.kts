@@ -12,23 +12,9 @@ val dependenciesContent: String = libs.bundles.library.map { bundle ->
 }.get()
 
 dependencies {
-    shade(project(":nms:v1_21_R3")) { isTransitive = false }
-    shade(project(":nms:v1_21_R4")) { isTransitive = false }
-    shade(project(":nms:v1_21_R5")) { isTransitive = false }
-    shade(project(":nms:v1_21_R6")) { isTransitive = false }
-    shade(project(":nms:v1_21_R7")) { isTransitive = false }
     shade(project(":nms:v26_R1")) { isTransitive = false }
     shade(project(":nms:v26_R2")) { isTransitive = false }
     shade(project(":nms:v26_R3")) { isTransitive = false }
-}
-
-modrinth {
-    gameVersions = SUPPORTED_VERSIONS
-    loaders = PAPER_LOADERS
-}
-
-tasks.modrinth {
-    dependsOn(tasks.modrinthSyncBody)
 }
 
 val generatePaperLibrary = tasks.register("generatePaperLibrary") {
@@ -59,7 +45,8 @@ paperPluginYaml {
     version = project.version.toString()
     name = "BetterModel"
     foliaSupported = true
-    apiVersion = "1.21.4"
+    // 26.1 より古いサーバーでは Paper が読み込みを拒否する（対応版は 26.1 以上のため）
+    apiVersion = "26.1"
     author = "toxicity188"
     contributors = listOf("https://github.com/toxicity188/BetterModel/graphs/contributors")
     description = "Modern Bedrock model engine for Minecraft Java Edition"
