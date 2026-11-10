@@ -14,6 +14,7 @@ import com.google.gson.JsonParser;
 import kr.toxicity.model.api.BetterModel;
 import kr.toxicity.model.api.config.DebugConfig;
 import kr.toxicity.model.api.entity.BaseEntity;
+import kr.toxicity.model.api.data.renderer.ModelRenderer;
 import kr.toxicity.model.api.entity.BasePlayer;
 import kr.toxicity.model.api.manager.PlayerManager;
 import kr.toxicity.model.api.nms.HitBox;
@@ -464,8 +465,27 @@ public final class EntityTrackerRegistry {
      * @since 1.15.2
      */
     public void load(@NotNull Stream<TrackerData> stream) {
-        stream.forEach(parsed -> BetterModel.model(parsed.id()).ifPresent(model -> model.create(entity, parsed.modifier(), parsed::applyAs)));
+        stream.forEach(parsed -> BetterModel.model(parsed.id()).ifPresent(model -> restore(model, parsed)));
         save();
+    }
+
+    /**
+     * 保存されたデータからトラッカーを付け直す。
+     * 皮膚を保存していれば同じ皮膚で付け、皮膚が無い・取れない時は既定の皮膚で付ける。
+     * 同じ名前のトラッカーが既にあれば、{@link #create(String, Function)} が閉じて置き換える。
+     */
+    private void restore(@NotNull ModelRenderer model, @NotNull TrackerData parsed) {
+        var info = parsed.restorableProfile();
+        if (info != null) {
+            try {
+                var profile = BetterModel.platform().profileManager().supplier().supply(info);
+                model.create(entity, profile, parsed.modifier(), parsed::applyAs);
+                return;
+            } catch (Throwable e) {
+                LogUtil.handleException("Unable to restore the skin of " + parsed.id() + ": " + info.name(), e);
+            }
+        }
+        model.create(entity, parsed.modifier(), parsed::applyAs);
     }
 
     /**

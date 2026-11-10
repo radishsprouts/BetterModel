@@ -23,6 +23,7 @@ import kr.toxicity.model.api.nms.HitBoxListener;
 import kr.toxicity.model.api.nms.ModelNametag;
 import kr.toxicity.model.api.platform.PlatformLocation;
 import kr.toxicity.model.api.platform.PlatformPlayer;
+import kr.toxicity.model.api.profile.ModelProfile;
 import kr.toxicity.model.api.util.EventUtil;
 import kr.toxicity.model.api.util.FunctionUtil;
 import kr.toxicity.model.api.util.MathUtil;
@@ -412,7 +413,11 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
             modifier,
             bodyRotator.createData(),
             hideOption,
-            markForSpawn
+            markForSpawn,
+            // 付ける時に皮膚を指定していれば、付け直しでも同じ皮膚を使えるように保存する。
+            Optional.ofNullable(pipeline.getSource().assignedProfile())
+                .map(ModelProfile.Uncompleted::info)
+                .orElse(null)
         );
     }
 

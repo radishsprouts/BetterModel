@@ -2,7 +2,7 @@
 
 - プラグイン名: BetterModel（Folia 対応フォーク radishsprouts/BetterModel の v3 系）
 - 最終更新日: 2026-11-11
-- 資料が合っているコミット: 478105df
+- 資料が合っているコミット: 46cdf1e0
 - この資料を使っている wiki のページ: なし（2026-11-11 時点で、本番の一般サーバー・資源サーバーの `plugins\` に BetterModel は入っていない。入るまでは wiki に載せない）
 
 > wiki(角鯖の公式サイトのプレイヤー向け Wiki)を書く時に、ソースを全部読み直さずに済ませるための資料。README・仕様書ではない。プレイヤーから見える事実だけを書く。
@@ -18,6 +18,7 @@
   - プレイヤーに着せたモデルでは、プレイヤー名(または付けた名前)が常に出る。
   - 名前が付いていない MOB には、何も出ない。
   - モデルの骨の設定(タグ)が PLAYER_TAG の骨は、MOB でも常に名前が出る。
+- **プレイヤーの姿のモデル(`players` フォルダのモデル。例: steve)を着せた MOB・プレイヤーは、サーバーを再読み込み(`bettermodel reload`)してもモデルが外れず、同じ皮膚で付け直される。** 皮膚を指定して着せた場合は、その皮膚のまま戻る。皮膚を指定していない場合は、プレイヤー本人ならその人の皮膚、MOB なら既定の皮膚で戻る。皮膚を取れなかった時も外れず、既定の皮膚で戻る。MOB に着せたモデルは、サーバーを再起動しても残る(プレイヤー本人に着せたモデルは、退出すると外れる。これは従来どおり)。
 
 ## プレイヤーの使い方
 
@@ -102,6 +103,7 @@
 - モデルの上の名前が、名前の変更に追随する挙動は、ビルドと単体テスト(判定の部分)までしか確かめていない。ゲームの中で名札・他プラグインでの名前変更が届くことは未確認(開発サーバーの `/bmtest tag name` と `/bmtest tag show` で確かめる予定)。
 - 名札で付けた名前が、見た時にだけ出ること、「名前を常に表示する」設定の MOB では常に出ること、その設定の変更に追随することは、ビルドと単体テスト(常時表示の決め方)までしか確かめていない。ゲームの中で確かめる(開発サーバーで名札を付けた MOB と、設定を立てた MOB を見比べる)。
 - 「見た時」の視線の角度の幅は、wiki に書く前にソース(`EntityUtil`)で確かめる。
+- プレイヤーの姿のモデルが再読み込みで外れず皮膚も戻ること、MOB に着せたモデルが再起動を越えて残ることは、ビルドと単体テスト(保存データの読み書き・古い形式の読み込み)までしか確かめていない。ゲームの中で、皮膚を指定して着せた MOB に再読み込みをかけて確かめる。
 
 ## 根拠
 
@@ -115,4 +117,6 @@
 | 常に表示するかの決め方(PLAYER_TAG の骨・プレイヤーは常に、それ以外は customNameVisible に従う) | `api/src/main/java/kr/toxicity/model/api/tracker/NametagVisibility.java`(`alwaysVisible`) |
 | 名前は印に関係なく渡す(名札の名前も出る)。名前が無ければ出ない | `nms/v26_R3/src/main/kotlin/kr/toxicity/model/bukkit/nms/v26_R3/BaseEntityImpl.kt`(`customName`、`customNameVisible`) |
 | 常に表示しない時は、5 ブロック以内で見ている時だけ出る | `api/src/main/java/kr/toxicity/model/api/util/EntityUtil.java`(`isCustomNameVisible`)、`nms/v26_R3/src/main/kotlin/kr/toxicity/model/bukkit/nms/v26_R3/ModelNametagImpl.kt`(`send`) |
+| プレイヤーの姿のモデルも保存する(`PLAYER(true)`)。再読み込みで皮膚つきで付け直す | `api/src/main/java/kr/toxicity/model/api/data/renderer/ModelRenderer.java`(`Type`)、`api/src/main/java/kr/toxicity/model/api/tracker/EntityTrackerRegistry.java`(`reload`、`restore`) |
+| 保存する皮膚(プロフィールの id と名前)。無い・不明なら既定の皮膚 | `api/src/main/java/kr/toxicity/model/api/tracker/TrackerData.java`(`profile`、`restorableProfile`)、`api/src/main/java/kr/toxicity/model/api/tracker/EntityTracker.java`(`asTrackerData`) |
 | `animation-lod-*` の既定値 | `core/bukkit-core/src/main/kotlin/kr/toxicity/model/bukkit/BetterModelConfigImpl.kt`(`animationLod*`) |

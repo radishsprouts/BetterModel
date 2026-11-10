@@ -9,6 +9,7 @@ package kr.toxicity.model.api.tracker;
 
 import com.google.gson.*;
 import com.google.gson.annotations.SerializedName;
+import kr.toxicity.model.api.profile.ModelProfileInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -30,6 +31,7 @@ import java.util.UUID;
  * @param bodyRotator the body rotation data
  * @param hideOption the entity hide options
  * @param markForSpawn the set of player UUIDs marked for spawning
+ * @param profile the profile (skin owner) the model was attached with, or null if none was specified
  * @since 1.15.2
  */
 public record TrackerData(
@@ -39,8 +41,36 @@ public record TrackerData(
     @NotNull TrackerModifier modifier,
     @Nullable @SerializedName("body-rotator") EntityBodyRotator.RotatorData bodyRotator,
     @Nullable @SerializedName("hide-option") EntityHideOption hideOption,
-    @Nullable @SerializedName("mark-for-spawn") Set<UUID> markForSpawn
+    @Nullable @SerializedName("mark-for-spawn") Set<UUID> markForSpawn,
+    @Nullable ModelProfileInfo profile
 ) {
+    /**
+     * Creates tracker data without a profile.
+     * <p>
+     * 皮膚の項目が無かった頃の形で作る。
+     * </p>
+     *
+     * @param id the model ID
+     * @param scaler the model scaler
+     * @param rotator the model rotator
+     * @param modifier the tracker modifier
+     * @param bodyRotator the body rotation data
+     * @param hideOption the entity hide options
+     * @param markForSpawn the set of player UUIDs marked for spawning
+     * @since 3.7.0
+     */
+    public TrackerData(
+        @NotNull String id,
+        @Nullable ModelScaler scaler,
+        @Nullable ModelRotator rotator,
+        @NotNull TrackerModifier modifier,
+        @Nullable EntityBodyRotator.RotatorData bodyRotator,
+        @Nullable EntityHideOption hideOption,
+        @Nullable Set<UUID> markForSpawn
+    ) {
+        this(id, scaler, rotator, modifier, bodyRotator, hideOption, markForSpawn, null);
+    }
+
     /**
      * The GSON parser for serializing and deserializing tracker data.
      * @since 1.15.2
@@ -95,8 +125,28 @@ public record TrackerData(
             TrackerModifier.DEFAULT,
             EntityBodyRotator.defaultData(),
             null,
+            null,
             null
         ) : PARSER.fromJson(element, TrackerData.class);
+    }
+
+    /**
+     * Returns the profile to restore the model with.
+     * <p>
+     * 皮膚を持たないデータ（古い形式を含む）と、皮膚が不明（{@link ModelProfileInfo#UNKNOWN}）のデータでは null を返す。
+     * null の時は、既定の皮膚（エンティティ自身の皮膚、または既定の皮膚）で付け直す。
+     * </p>
+     *
+     * <pre>{@code
+     * var profile = data.restorableProfile();
+     * if (profile != null) model.create(entity, supplier.supply(profile), data.modifier());
+     * }</pre>
+     *
+     * @return the profile info, or null if the default skin should be used
+     * @since 3.7.0
+     */
+    public @Nullable ModelProfileInfo restorableProfile() {
+        return profile == null || profile.equals(ModelProfileInfo.UNKNOWN) ? null : profile;
     }
 
     /**
