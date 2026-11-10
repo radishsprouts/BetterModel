@@ -163,8 +163,8 @@ public interface BaseEntity extends Identifiable {
     /**
      * 乗り位置を、向きで回す前の値で取得する。
      * 統合版の座席の位置に使う（向きで回した {@link #passengerPosition(Vector3f)} とは別）。
-     * @param dest destination vector
-     * @return passenger attachment before rotation
+     * @param dest 結果を書き込むベクトル
+     * @return 向きで回す前の乗り位置
      */
     @NotNull Vector3f passengerAttachment(@NotNull Vector3f dest);
 

@@ -21,11 +21,11 @@ import org.jetbrains.annotations.Nullable;
 public record ArmorItem(int tint, @NotNull String type, @Nullable String trim, @Nullable String palette, @Nullable String itemId) {
 
     /**
-     * Creates an armor item without an item id.
-     * @param tint tint value
-     * @param type armor type
-     * @param trim trim
-     * @param palette palette
+     * アイテムの id を持たない防具を作る（統合版の兜は被せない）。
+     * @param tint 色
+     * @param type 防具の種類
+     * @param trim トリム
+     * @param palette トリムの色のパレット
      */
     public ArmorItem(int tint, @NotNull String type, @Nullable String trim, @Nullable String palette) {
         this(tint, type, trim, palette, null);
