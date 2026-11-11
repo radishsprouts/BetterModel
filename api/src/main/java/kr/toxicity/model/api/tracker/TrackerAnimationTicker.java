@@ -63,6 +63,8 @@ final class TrackerAnimationTicker {
     private final int phase = ThreadLocalRandom.current().nextInt(64);
 
     private volatile boolean immediate;
+    // 最新の版をまだ受け取っていない視聴者がいるか（LOD で番を待っている）。tick のスレッドだけが読み書きする。
+    private boolean waiting;
 
     /**
      * Constructs a new animation ticker.
@@ -100,8 +102,12 @@ final class TrackerAnimationTicker {
             version = next;
             pipeline.sync(next);
         }
-        recalculateViewedPlayers();
-        sendGlobal(frame, location, forced, changed);
+        // 視聴者の数え直し（距離・視野の判定を含み重い）は、送るものがある時だけ行う。
+        // 姿勢が変わった／強制の送信／最新の版をまだ受け取っていない視聴者がいる、のどれかの時。
+        if (changed || forced || waiting) {
+            recalculateViewedPlayers();
+            sendGlobal(frame, location, forced, changed);
+        }
         if (!perPlayerAnimationCache.isEmpty()) perPlayerAnimationCache.values().forEach(PerPlayerCache::send);
     }
 
@@ -147,8 +153,10 @@ final class TrackerAnimationTicker {
     private void sendGlobal(long frame, @NotNull PlatformLocation location, boolean forced, boolean changed) {
         if (viewedPlayers.isEmpty()) {
             viewers.clear();
+            waiting = false;
             return;
         }
+        var stillWaiting = false;
         var config = BetterModel.config();
         var lod = !forced && config.animationLod();
         // 距離の計算は 1 MC ティックに 1 回。
@@ -171,7 +179,10 @@ final class TrackerAnimationTicker {
             var sent = viewer.sent;
             if (sent >= version) continue;
             var step = viewer.step;
-            if (step > 1 && (frame + phase) % step != 0) continue;
+            if (step > 1 && (frame + phase) % step != 0) {
+                stillWaiting = true;
+                continue;
+            }
             var minDuration = step > 1 ? (step + Tracker.MINECRAFT_TICK_MULTIPLIER - 1) / Tracker.MINECRAFT_TICK_MULTIPLIER : 0;
             var key = (sent << 16) | (minDuration & 0xFFFF);
             if (bundlers == null) bundlers = new Long2ReferenceOpenHashMap<>();
@@ -184,6 +195,7 @@ final class TrackerAnimationTicker {
             if (bundler.isNotEmpty()) bundler.send(channel);
             viewer.sent = version;
         }
+        waiting = stillWaiting;
         if (viewers.size() > viewedPlayers.size()) viewers.values().removeIf(v -> v.stamp != stamp);
     }
 
