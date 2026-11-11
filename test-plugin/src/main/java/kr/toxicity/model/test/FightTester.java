@@ -289,6 +289,9 @@ public final class FightTester implements ModelTester, Listener {
                 new Vector3f(),
                 new Vector3f(1, 1, length),
                 quaternionf,
+                // この表示は新しく作ったばかりで、受け手は何も受け取っていない（版 -1）。今回の姿勢を版 1 として全項目を送る。
+                1L,
+                -1L,
                 new AnimationBundler(bundler, BetterModel.nms().createModAnimationBuilder(2))
             );
             players.forEach(bundler::send);
