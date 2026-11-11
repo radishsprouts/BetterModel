@@ -465,7 +465,11 @@ public final class EntityTrackerRegistry {
      * @since 1.15.2
      */
     public void load(@NotNull Stream<TrackerData> stream) {
-        stream.forEach(parsed -> BetterModel.model(parsed.id()).ifPresent(model -> restore(model, parsed)));
+        stream.forEach(parsed -> {
+            // 保存した型に合った表から引く（PLAYER 型は GENERAL の表には無い）
+            var model = parsed.resolve(BetterModel::modelOrNull, BetterModel::limbOrNull);
+            if (model != null) restore(model, parsed);
+        });
         save();
     }
 

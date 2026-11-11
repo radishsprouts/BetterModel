@@ -9,6 +9,7 @@ package kr.toxicity.model.api.tracker;
 
 import com.google.gson.*;
 import com.google.gson.annotations.SerializedName;
+import kr.toxicity.model.api.data.renderer.ModelRenderer;
 import kr.toxicity.model.api.profile.ModelProfileInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -16,6 +17,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Collections;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * Represents the persistent data state of a tracker.
@@ -32,6 +34,7 @@ import java.util.UUID;
  * @param hideOption the entity hide options
  * @param markForSpawn the set of player UUIDs marked for spawning
  * @param profile the profile (skin owner) the model was attached with, or null if none was specified
+ * @param type 保存した時のモデルの型（GENERAL / PLAYER）。型の項目が無い古い形式では null
  * @since 1.15.2
  */
 public record TrackerData(
@@ -42,8 +45,38 @@ public record TrackerData(
     @Nullable @SerializedName("body-rotator") EntityBodyRotator.RotatorData bodyRotator,
     @Nullable @SerializedName("hide-option") EntityHideOption hideOption,
     @Nullable @SerializedName("mark-for-spawn") Set<UUID> markForSpawn,
-    @Nullable ModelProfileInfo profile
+    @Nullable ModelProfileInfo profile,
+    @Nullable ModelRenderer.Type type
 ) {
+    /**
+     * モデルの型を持たないトラッカーの保存データを作る。
+     * <p>
+     * モデルの型の項目が無かった頃の形で作る。付け直す時は GENERAL、無ければ PLAYER の順で引く。
+     * </p>
+     *
+     * @param id モデルの名前
+     * @param scaler モデルの拡大率
+     * @param rotator モデルの回転
+     * @param modifier トラッカーの設定
+     * @param bodyRotator 体の回転のデータ
+     * @param hideOption エンティティを隠す設定
+     * @param markForSpawn 表示の対象として印を付けたプレイヤーの UUID
+     * @param profile 皮膚の持ち主。無ければ null
+     * @since 3.7.0
+     */
+    public TrackerData(
+        @NotNull String id,
+        @Nullable ModelScaler scaler,
+        @Nullable ModelRotator rotator,
+        @NotNull TrackerModifier modifier,
+        @Nullable EntityBodyRotator.RotatorData bodyRotator,
+        @Nullable EntityHideOption hideOption,
+        @Nullable Set<UUID> markForSpawn,
+        @Nullable ModelProfileInfo profile
+    ) {
+        this(id, scaler, rotator, modifier, bodyRotator, hideOption, markForSpawn, profile, null);
+    }
+
     /**
      * Creates tracker data without a profile.
      * <p>
@@ -68,7 +101,7 @@ public record TrackerData(
         @Nullable EntityHideOption hideOption,
         @Nullable Set<UUID> markForSpawn
     ) {
-        this(id, scaler, rotator, modifier, bodyRotator, hideOption, markForSpawn, null);
+        this(id, scaler, rotator, modifier, bodyRotator, hideOption, markForSpawn, null, null);
     }
 
     /**
@@ -126,6 +159,7 @@ public record TrackerData(
             EntityBodyRotator.defaultData(),
             null,
             null,
+            null,
             null
         ) : PARSER.fromJson(element, TrackerData.class);
     }
@@ -147,6 +181,30 @@ public record TrackerData(
      */
     public @Nullable ModelProfileInfo restorableProfile() {
         return profile == null || profile.equals(ModelProfileInfo.UNKNOWN) ? null : profile;
+    }
+
+    /**
+     * 保存した型に合った表からモデルを引く。
+     * <p>
+     * 型があればその表だけを引く（同じ名前が両方の表にあっても取り違えない）。
+     * 型が無い古い形式では、GENERAL の表で引き、無ければ PLAYER の表で引く。
+     * </p>
+     *
+     * <pre>{@code
+     * var model = data.resolve(BetterModel::modelOrNull, BetterModel::limbOrNull);
+     * }</pre>
+     *
+     * @param general GENERAL 型の表から名前で引く関数
+     * @param player PLAYER 型の表から名前で引く関数
+     * @param <T> モデルの描画器の型
+     * @return 見つかったモデル。どちらの表にも無ければ null
+     * @since 3.7.0
+     */
+    public <T> @Nullable T resolve(@NotNull Function<String, T> general, @NotNull Function<String, T> player) {
+        if (type == ModelRenderer.Type.PLAYER) return player.apply(id);
+        if (type == ModelRenderer.Type.GENERAL) return general.apply(id);
+        var found = general.apply(id);
+        return found != null ? found : player.apply(id);
     }
 
     /**
