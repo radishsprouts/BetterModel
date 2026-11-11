@@ -248,6 +248,8 @@ internal class ModelDisplayImpl(
             position: Vector3f,
             scale: Vector3f,
             rotation: Quaternionf,
+            version: Long,
+            sinceVersion: Long,
             bundler: AnimationBundler
         ) {
             entityDataLock.accessToLock {
@@ -255,9 +257,10 @@ internal class ModelDisplayImpl(
                     duration,
                     position,
                     scale,
-                    rotation
+                    rotation,
+                    version
                 )
-                entityData.packDirty(id, bundler)
+                entityData.packChanges(id, sinceVersion, bundler)
             }
         }
 

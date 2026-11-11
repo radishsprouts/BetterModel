@@ -13,7 +13,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * [SplitPackets] と [DirtyValue] が、nms の各版にあった時と同じ振る舞いをすることを確かめる。
+ * [SplitPackets] が、nms の各版にあった時と同じ振る舞いをすることを確かめる。
  */
 class SplitPacketsTest {
 
@@ -50,24 +50,5 @@ class SplitPacketsTest {
         listOf(6, 6, 1, 20, 1, 1).forEach(split::add)
         // 6,6 -> 12 > 10 なので 3 つ目から次の入れ物。1 -> 1, 20 -> 21 > 10 なので 5 つ目から次の入れ物
         assertEquals(listOf(listOf(6, 6), listOf(1, 20), listOf(1, 1)), split.chunks.map { it.list })
-    }
-
-    @Test
-    fun `変更の記録は同じ値では立たず、取り出すと消える`() {
-        val current = floatArrayOf(0f)
-        val value = DirtyValue(current, { a, b -> a[0] == b[0] }, { dest, src -> dest[0] = src[0] }, { it.copyOf() })
-        assertEquals(0, value.cleanIndex)
-        value.set(floatArrayOf(0f))
-        assertEquals(0, value.cleanIndex)
-        value.set(floatArrayOf(2f))
-        assertEquals(1, value.cleanIndex)
-        val taken = value.takeIfDirty()
-        assertEquals(2f, taken!![0])
-        assertEquals(0, value.cleanIndex)
-        assertEquals(null, value.takeIfDirty())
-        // 取り出した値は複製で、その後の変更に影響されない
-        value.set(floatArrayOf(5f))
-        assertEquals(2f, taken[0])
-        assertEquals(5f, value.copy()[0])
     }
 }

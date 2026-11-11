@@ -371,7 +371,11 @@ public final class RenderedBone implements BoneEventHandler {
      */
     public void sendTransformation(@Nullable UUID uuid, @NotNull AnimationBundler bundler) {
         var handler = state(uuid);
-        if (handler.syncCurrent(0L)) handler.emitTransformation(0, bundler);
+        if (handler.syncCurrent(0L)) {
+            // 受け手は1人（その状態を見ているプレイヤー）だけなので、呼ぶたびに進む自前の版で「前回の呼び出し以降」を判定する。
+            var version = ++handler.emittedVersion;
+            handler.emitTransformation(version, version - 1, 0, bundler);
+        }
     }
 
     /**
@@ -390,7 +394,8 @@ public final class RenderedBone implements BoneEventHandler {
      * @param bundler バンドラー
      */
     public void sendTransformation(long sinceVersion, int minDuration, @NotNull AnimationBundler bundler) {
-        if (globalState.changedVersion > sinceVersion) globalState.emitTransformation(minDuration, bundler);
+        var changedVersion = globalState.changedVersion;
+        if (changedVersion > sinceVersion) globalState.emitTransformation(changedVersion, sinceVersion, minDuration, bundler);
     }
 
     public void forceTransformation(@NotNull PacketBundler bundler) {
@@ -658,6 +663,8 @@ public final class RenderedBone implements BoneEventHandler {
         private final BoneMovement before = new BoneMovement(), after = new BoneMovement(), current = new BoneMovement();
         private final DisplayTransformer transformer = display != null ? display.createTransformer() : null;
         private volatile long changedVersion = 0L;
+        // プレイヤー個別の状態が使う、パケットを作った回数。全体の状態は使わない。
+        private long emittedVersion = 0L;
 
         //Flags
         private boolean firstTick = true;
@@ -752,7 +759,12 @@ public final class RenderedBone implements BoneEventHandler {
             return true;
         }
 
-        private void emitTransformation(int minDuration, @NotNull AnimationBundler bundler) {
+        /**
+         * 現在の姿勢のうち、{@code sinceVersion} より後に変わった項目をバンドラーへ詰めます。
+         * 項目の変更は版で覚えるので、同じ版の姿勢を別の {@code sinceVersion}・{@code minDuration} で何度詰めても、
+         * 受け手ごとに最後に送った版より後の分が必ず届きます。
+         */
+        private void emitTransformation(long version, long sinceVersion, int minDuration, @NotNull AnimationBundler bundler) {
             if (transformer == null) return;
             var movement = current;
             var mul = scale.getAsFloat();
@@ -771,6 +783,8 @@ public final class RenderedBone implements BoneEventHandler {
                     .mul(mul)
                     .max(EMPTY_VECTOR),
                 movement.rotation(),
+                version,
+                sinceVersion,
                 bundler
             );
         }
