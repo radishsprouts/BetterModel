@@ -417,7 +417,9 @@ public sealed class EntityTracker extends Tracker permits PlayerTracker {
             // 付ける時に皮膚を指定していれば、付け直しでも同じ皮膚を使えるように保存する。
             Optional.ofNullable(pipeline.getSource().assignedProfile())
                 .map(ModelProfile.Uncompleted::info)
-                .orElse(null)
+                .orElse(null),
+            // 付け直す時に、型に合った表から引くために保存する。
+            renderer().type()
         );
     }
 

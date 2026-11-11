@@ -95,4 +95,60 @@ class TrackerDataTest {
         val legacy = TrackerData("steve", null, null, TrackerModifier.DEFAULT, null, null, null)
         assertNull(legacy.profile())
     }
+
+    private fun typed(id: String, type: ModelRenderer.Type?) = TrackerData(
+        id, null, null, TrackerModifier.DEFAULT, null, null, null, null, type
+    )
+
+    // 表の代わりに、名前から印を返す関数を使う（付け直しで引く表の選択だけを試す）
+    private val generalTable = mapOf("demon_knight" to "general:demon_knight", "both" to "general:both")
+    private val playerTable = mapOf("steve" to "player:steve", "both" to "player:both")
+    private fun resolve(data: TrackerData) = data.resolve(generalTable::get, playerTable::get)
+
+    @Test
+    fun `モデルの型は書き出して読み直しても同じになる`() {
+        for (type in ModelRenderer.Type.entries) {
+            assertEquals(type, TrackerData.deserialize(typed("steve", type).serialize()).type())
+        }
+    }
+
+    @Test
+    fun `型の項目が無い古い形式は型なしで読める`() {
+        val old = JsonParser.parseString("""{"id":"steve","modifier":{"sight-trace":true}}""")
+        assertNull(TrackerData.deserialize(old).type())
+        assertNull(TrackerData.deserialize(JsonParser.parseString("\"steve\"")).type())
+        assertNull(legacyEightArgs().type())
+    }
+
+    private fun legacyEightArgs() = TrackerData("steve", null, null, TrackerModifier.DEFAULT, null, null, null, skinOwner)
+
+    @Test
+    fun `PLAYER 型は PLAYER の表から引く`() {
+        assertEquals("player:steve", resolve(typed("steve", ModelRenderer.Type.PLAYER)))
+    }
+
+    @Test
+    fun `GENERAL 型は GENERAL の表から引く`() {
+        assertEquals("general:demon_knight", resolve(typed("demon_knight", ModelRenderer.Type.GENERAL)))
+    }
+
+    @Test
+    fun `同じ名前が両方の表にあっても、保存した型の表から引く`() {
+        assertEquals("player:both", resolve(typed("both", ModelRenderer.Type.PLAYER)))
+        assertEquals("general:both", resolve(typed("both", ModelRenderer.Type.GENERAL)))
+    }
+
+    @Test
+    fun `型が保存されていても、その表に無ければ他方の表へは落とさない`() {
+        assertNull(resolve(typed("steve", ModelRenderer.Type.GENERAL)))
+        assertNull(resolve(typed("demon_knight", ModelRenderer.Type.PLAYER)))
+    }
+
+    @Test
+    fun `型の無い古い形式は GENERAL で引き、無ければ PLAYER で引く`() {
+        assertEquals("general:demon_knight", resolve(typed("demon_knight", null)))
+        assertEquals("player:steve", resolve(typed("steve", null)))
+        assertEquals("general:both", resolve(typed("both", null)))
+        assertNull(resolve(typed("nothing", null)))
+    }
 }

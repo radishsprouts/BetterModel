@@ -103,7 +103,7 @@
 - モデルの上の名前が、名前の変更に追随する挙動は、ビルドと単体テスト(判定の部分)までしか確かめていない。ゲームの中で名札・他プラグインでの名前変更が届くことは未確認(開発サーバーの `/bmtest tag name` と `/bmtest tag show` で確かめる予定)。
 - 名札で付けた名前が、見た時にだけ出ること、「名前を常に表示する」設定の MOB では常に出ること、その設定の変更に追随することは、ビルドと単体テスト(常時表示の決め方)までしか確かめていない。ゲームの中で確かめる(開発サーバーで名札を付けた MOB と、設定を立てた MOB を見比べる)。
 - 「見た時」の視線の角度の幅は、wiki に書く前にソース(`EntityUtil`)で確かめる。
-- プレイヤーの姿のモデルが再読み込みで外れず皮膚も戻ること、MOB に着せたモデルが再起動を越えて残ることは、ビルドと単体テスト(保存データの読み書き・古い形式の読み込み)までしか確かめていない。ゲームの中で、皮膚を指定して着せた MOB に再読み込みをかけて確かめる。
+- プレイヤーの姿のモデルが再読み込みで外れず皮膚も戻ること、MOB に着せたモデルが再起動を越えて残ることは、ビルドと単体テスト(保存データの読み書き・古い形式の読み込み・型に合った表を引く判定)までしか確かめていない。ゲームの中で、皮膚を指定して着せた MOB に再読み込みをかけて確かめる。
 
 ## 根拠
 
@@ -119,4 +119,5 @@
 | 常に表示しない時は、5 ブロック以内で見ている時だけ出る | `api/src/main/java/kr/toxicity/model/api/util/EntityUtil.java`(`isCustomNameVisible`)、`nms/v26_R3/src/main/kotlin/kr/toxicity/model/bukkit/nms/v26_R3/ModelNametagImpl.kt`(`send`) |
 | プレイヤーの姿のモデルも保存する(`PLAYER(true)`)。再読み込みで皮膚つきで付け直す | `api/src/main/java/kr/toxicity/model/api/data/renderer/ModelRenderer.java`(`Type`)、`api/src/main/java/kr/toxicity/model/api/tracker/EntityTrackerRegistry.java`(`reload`、`restore`) |
 | 保存する皮膚(プロフィールの id と名前)。無い・不明なら既定の皮膚 | `api/src/main/java/kr/toxicity/model/api/tracker/TrackerData.java`(`profile`、`restorableProfile`)、`api/src/main/java/kr/toxicity/model/api/tracker/EntityTracker.java`(`asTrackerData`) |
+| 保存したモデルの型(GENERAL / PLAYER)に合った表から付け直す。型が無い古い保存は GENERAL → PLAYER の順で引く | `api/src/main/java/kr/toxicity/model/api/tracker/TrackerData.java`(`type`、`resolve`)、`api/src/main/java/kr/toxicity/model/api/tracker/EntityTrackerRegistry.java`(`load`) |
 | `animation-lod-*` の既定値 | `core/bukkit-core/src/main/kotlin/kr/toxicity/model/bukkit/BetterModelConfigImpl.kt`(`animationLod*`) |
