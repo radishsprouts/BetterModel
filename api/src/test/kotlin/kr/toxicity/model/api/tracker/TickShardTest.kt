@@ -11,6 +11,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -154,10 +155,15 @@ class TickShardTest {
     fun `tick の最中に自分を解除しても、止まって再登録できる`() {
         lateinit var shard: TickShard<String>
         val removed = CountDownLatch(1)
+        // 再登録の後の tick を待つための印。ハンドラは tick のたびに自分を解除して周期タスクを止めるので、
+        // 再登録後の最初の tick が「待ち始める前」に終わっていても取りこぼさないよう、ticks の数ではなく latch で受ける。
+        val reAdded = AtomicBoolean(false)
+        val secondTick = CountDownLatch(1)
         shard = TickShard(executor, 0L, 1_000L) {
             ticks.incrementAndGet()
             shard.remove(1L)
             removed.countDown()
+            if (reAdded.get()) secondTick.countDown()
         }
         shard.add(1L, "a")
         assertTrue(removed.await(5, TimeUnit.SECONDS))
@@ -165,8 +171,12 @@ class TickShardTest {
         assertStopped()
 
         val before = ticks.get()
+        reAdded.set(true)
         shard.add(1L, "a")
-        awaitTicks(1)
+        assertTrue(secondTick.await(5, TimeUnit.SECONDS), "再登録しても tick されない")
         assertTrue(ticks.get() > before)
+        // 2 回目も自分を解除しているので、また止まる
+        assertFalse(shard.running())
+        assertStopped()
     }
 }
