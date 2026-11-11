@@ -34,7 +34,7 @@ import java.util.function.Function;
  * @param hideOption the entity hide options
  * @param markForSpawn the set of player UUIDs marked for spawning
  * @param profile the profile (skin owner) the model was attached with, or null if none was specified
- * @param type the renderer type the model was saved with (GENERAL / PLAYER), or null for old data without it
+ * @param type 保存した時のモデルの型（GENERAL / PLAYER）。型の項目が無い古い形式では null
  * @since 1.15.2
  */
 public record TrackerData(
@@ -49,19 +49,19 @@ public record TrackerData(
     @Nullable ModelRenderer.Type type
 ) {
     /**
-     * Creates tracker data without a renderer type.
+     * モデルの型を持たないトラッカーの保存データを作る。
      * <p>
      * モデルの型の項目が無かった頃の形で作る。付け直す時は GENERAL、無ければ PLAYER の順で引く。
      * </p>
      *
-     * @param id the model ID
-     * @param scaler the model scaler
-     * @param rotator the model rotator
-     * @param modifier the tracker modifier
-     * @param bodyRotator the body rotation data
-     * @param hideOption the entity hide options
-     * @param markForSpawn the set of player UUIDs marked for spawning
-     * @param profile the profile (skin owner), or null
+     * @param id モデルの名前
+     * @param scaler モデルの拡大率
+     * @param rotator モデルの回転
+     * @param modifier トラッカーの設定
+     * @param bodyRotator 体の回転のデータ
+     * @param hideOption エンティティを隠す設定
+     * @param markForSpawn 表示の対象として印を付けたプレイヤーの UUID
+     * @param profile 皮膚の持ち主。無ければ null
      * @since 3.7.0
      */
     public TrackerData(
@@ -196,8 +196,8 @@ public record TrackerData(
      *
      * @param general GENERAL 型の表から名前で引く関数
      * @param player PLAYER 型の表から名前で引く関数
-     * @param <T> the renderer type
-     * @return the found model, or null
+     * @param <T> モデルの描画器の型
+     * @return 見つかったモデル。どちらの表にも無ければ null
      * @since 3.7.0
      */
     public <T> @Nullable T resolve(@NotNull Function<String, T> general, @NotNull Function<String, T> player) {
