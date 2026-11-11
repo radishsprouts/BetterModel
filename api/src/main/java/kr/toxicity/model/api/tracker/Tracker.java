@@ -70,63 +70,57 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
         }
     });
 
+    private static final long PERIOD_MICROS = Tracker.TRACKER_TICK_INTERVAL * 1000L;
+
     /**
      * 1つの周期タスクで tick されるトラッカーの集まり。
      * <p>
      * トラッカーは固有の ID を鍵にして保持する（トラッカーはモデル名ではなく同一性で区別する）ため、
      * 同じモデルのトラッカーをシャードにいくつでも入れられる。
+     * 担当するトラッカーが無い間は周期タスクを動かさない（{@link TickShard}）。
      * </p>
      */
-    private static final class TrackerShard {
+    private static final TickShard<Tracker>[] SHARDS = createShards();
 
-        private static final long PERIOD_MICROS = TRACKER_TICK_INTERVAL * 1000L;
-        private static final long PERIOD_NANOS = PERIOD_MICROS * 1000L;
-
-        private final Map<Long, Tracker> trackers = new ConcurrentHashMap<>();
-        private long lastTick = 0L;
-
-        private TrackerShard(int index) {
+    @SuppressWarnings("unchecked")
+    private static TickShard<Tracker>[] createShards() {
+        var shards = (TickShard<Tracker>[]) new TickShard<?>[SHARD_COUNT];
+        for (int i = 0; i < SHARD_COUNT; i++) {
             // シャードが同時に tick しないよう、シャードごとに開始時刻をずらす。
-            EXECUTOR.scheduleAtFixedRate(
-                this::tickAll,
-                PERIOD_MICROS + PERIOD_MICROS * index / SHARD_COUNT,
-                PERIOD_MICROS,
-                TimeUnit.MICROSECONDS
-            );
+            shards[i] = new TickShard<>(EXECUTOR, PERIOD_MICROS + PERIOD_MICROS * i / SHARD_COUNT, PERIOD_MICROS, Tracker::tickShard);
         }
-
-        private void tickAll() {
-            var now = System.nanoTime();
-            // scheduleAtFixedRate は遅れた後に連続で追いつき実行する。その実行は捨てる。
-            // 追いつくとアニメーションが早送りになり、負荷もさらに跳ね上がる。
-            if (lastTick != 0L && now - lastTick < PERIOD_NANOS / 2) return;
-            lastTick = now;
-            for (Tracker tracker : trackers.values()) {
-                try {
-                    if (tracker.playerCount() == 0 && !tracker.forRemoval.get()) {
-                        tracker.shutdownIfIdle();
-                        continue;
-                    }
-                    tracker.frame = tracker.frame + 1;
-                    tracker.tick();
-                } catch (Throwable t) {
-                    LogUtil.handleException("Exception occurred while ticking tracker: " + tracker.name(), t);
-                }
-            }
-        }
+        return shards;
     }
 
-    private static final TrackerShard[] SHARDS = new TrackerShard[SHARD_COUNT];
-    static {
-        for (int i = 0; i < SHARD_COUNT; i++) {
-            SHARDS[i] = new TrackerShard(i);
+    /**
+     * 全シャードの周期タスクを止め、実行器を終了します。プラグインの無効化時に一度だけ呼びます。
+     * 呼んだ後に開始したトラッカーは tick されません。
+     *
+     * @since 3.7.0
+     */
+    @ApiStatus.Internal
+    public static void shutdownScheduler() {
+        for (TickShard<Tracker> shard : SHARDS) shard.close();
+        EXECUTOR.shutdownNow();
+    }
+
+    private static void tickShard(@NotNull Tracker tracker) {
+        try {
+            if (tracker.playerCount() == 0 && !tracker.forRemoval.get()) {
+                tracker.shutdownIfIdle();
+                return;
+            }
+            tracker.frame = tracker.frame + 1;
+            tracker.tick();
+        } catch (Throwable t) {
+            LogUtil.handleException("Exception occurred while ticking tracker: " + tracker.name(), t);
         }
     }
 
     private final long id = ID_COUNTER.getAndIncrement();
     private final AtomicBoolean scheduled = new AtomicBoolean();
 
-    private TrackerShard shard() {
+    private TickShard<Tracker> shard() {
         return SHARDS[(int) (id % SHARD_COUNT)];
     }
 
@@ -262,7 +256,7 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
                 TrackerBuiltInAnimation.play(this);
             }
             tick();
-            shard().trackers.put(id, this);
+            shard().add(id, this);
             LogUtil.debug(DebugConfig.DebugOption.TRACKER, () -> getClass().getSimpleName() + " scheduler started: " + name());
         }
     }
@@ -285,7 +279,7 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
 
     private void stop() {
         if (scheduled.compareAndSet(true, false)) {
-            shard().trackers.remove(id);
+            shard().remove(id);
             frame = 0;
             LogUtil.debug(DebugConfig.DebugOption.TRACKER, () -> getClass().getSimpleName() + " scheduler shutdown: " + name());
         }
@@ -639,6 +633,8 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
         if (!EventUtil.call(ModelSpawnAtPlayerEvent.class, () -> new ModelSpawnAtPlayerEvent(player, this)).triggered()) return false;
         return pipeline.spawn(player, bundler, spawned -> {
             LogUtil.debug(DebugConfig.DebugOption.TRACKER, () -> getClass().getSimpleName() + " is spawned at player " + player.name() + ": " + name());
+            // スポーンのパケットの姿勢が古くても、次の tick で最新の姿勢を受け取らせる
+            animationTicker.spawned(player.uuid());
             task(spawned::load);
         });
     }

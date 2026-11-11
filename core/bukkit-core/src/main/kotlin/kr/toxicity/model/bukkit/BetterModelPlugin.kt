@@ -18,6 +18,7 @@ import kr.toxicity.model.api.manager.Manager
 import kr.toxicity.model.api.manager.ReloadInfo
 import kr.toxicity.model.api.nms.NMS
 import kr.toxicity.model.api.pack.PackZipper
+import kr.toxicity.model.api.tracker.Tracker
 import kr.toxicity.model.api.version.MinecraftVersion
 import kr.toxicity.model.bukkit.command.startBukkitCommand
 import kr.toxicity.model.bukkit.configuration.PluginConfiguration
@@ -133,6 +134,8 @@ abstract class BetterModelPlugin : AbstractBetterModelPlugin() {
         props.managers.values.forEach {
             runCatching(it::end).handleFailure { "Unable to end manager: ${it.javaClass.simpleName}" }
         }
+        // トラッカーの周期タスクと実行器を確実に止める（各トラッカーの close で止まるはずだが、取りこぼしても残さない）
+        runCatching(Tracker::shutdownScheduler).handleFailure { "Unable to shutdown tracker scheduler" }
         ADVENTURE_PLATFORM?.close()
     }
 

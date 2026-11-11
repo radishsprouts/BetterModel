@@ -108,6 +108,10 @@ public final class RenderedBone implements BoneEventHandler {
 
     private Supplier<Vector3f> defaultPosition = FunctionUtil.asSupplier(EMPTY_VECTOR);
     private FloatSupplier scale = FloatConstantSupplier.ONE;
+    // 拡大・乗り位置・表示アイテムの変化の検出に使う。tick のスレッドだけが読み書きする（externalDirty は別スレッドが立てる）。
+    private float lastScale = 1F;
+    private final Vector3f lastDefaultPosition = new Vector3f();
+    private final AtomicBoolean externalDirty = new AtomicBoolean();
 
     private Function<Vector3f, Vector3f> positionModifier = p -> p;
     private Vector3f lastModifiedPosition = new Vector3f();
@@ -280,6 +284,8 @@ public final class RenderedBone implements BoneEventHandler {
             synchronized (itemLock) {
                 if (this.itemStack == itemStack) return false;
                 this.itemStack = itemStack;
+                // アイテムの位置・拡大・オフセットは変形に入る。骨が止まっていても次の tick で送られるよう印を付ける。
+                externalDirty.set(true);
                 if (display != null) display.invisible(itemStack.isAir());
                 tintCacheMap.clear();
                 return applyItem();
@@ -371,7 +377,11 @@ public final class RenderedBone implements BoneEventHandler {
      */
     public void sendTransformation(@Nullable UUID uuid, @NotNull AnimationBundler bundler) {
         var handler = state(uuid);
-        if (handler.syncCurrent(0L)) handler.emitTransformation(0, bundler);
+        if (handler.syncCurrent(0L)) {
+            // 受け手は1人（その状態を見ているプレイヤー）だけなので、呼ぶたびに進む自前の版で「前回の呼び出し以降」を判定する。
+            var version = ++handler.emittedVersion;
+            handler.emitTransformation(version, version - 1, 0, bundler);
+        }
     }
 
     /**
@@ -384,13 +394,41 @@ public final class RenderedBone implements BoneEventHandler {
     }
 
     /**
+     * 拡大・乗り位置・表示アイテムの変化を検出し、変わっていればこの骨の変更の版を進めます（パケットは作りません）。
+     * <p>
+     * これらは骨の姿勢（キーフレーム）とは別の入力で、変わっても {@link #syncTransformation(long)} は反応しません。
+     * 骨が止まっていても、変化が受け手へ送られるようにするために毎 tick 呼びます。
+     * </p>
+     * @param version ティッカーが渡す単調増加の版番号
+     * @return 変化があったか
+     */
+    public boolean syncExternal(long version) {
+        if (globalState.transformer == null) return false;
+        var changed = externalDirty.getAndSet(false);
+        var currentScale = scale.getAsFloat();
+        if (Math.abs(currentScale - lastScale) > MathUtil.FLOAT_COMPARISON_EPSILON) {
+            lastScale = currentScale;
+            changed = true;
+        }
+        var position = defaultPosition.get();
+        if (!MathUtil.isSimilar(position, lastDefaultPosition)) {
+            lastDefaultPosition.set(position);
+            changed = true;
+        }
+        if (changed) globalState.markChanged(version);
+        return changed;
+    }
+
+    /**
      * 指定した版より後に変化していれば、全体の状態の最新の変形を送ります。
+     * @param version ティッカーの今の版。項目の変更の版として記録する（骨自身の変更の版ではない。
+     *                受け手ごとに最後に受け取った版が違っても、新しい値が必ず誰かの「後の版」になる）
      * @param sinceVersion 受け手がすでに持っている最後の版
      * @param minDuration 補間時間の下限（ティック。飛ばしたフレーム分を埋める）
      * @param bundler バンドラー
      */
-    public void sendTransformation(long sinceVersion, int minDuration, @NotNull AnimationBundler bundler) {
-        if (globalState.changedVersion > sinceVersion) globalState.emitTransformation(minDuration, bundler);
+    public void sendTransformation(long version, long sinceVersion, int minDuration, @NotNull AnimationBundler bundler) {
+        if (globalState.changedVersion > sinceVersion) globalState.emitTransformation(version, sinceVersion, minDuration, bundler);
     }
 
     public void forceTransformation(@NotNull PacketBundler bundler) {
@@ -658,6 +696,8 @@ public final class RenderedBone implements BoneEventHandler {
         private final BoneMovement before = new BoneMovement(), after = new BoneMovement(), current = new BoneMovement();
         private final DisplayTransformer transformer = display != null ? display.createTransformer() : null;
         private volatile long changedVersion = 0L;
+        // プレイヤー個別の状態が使う、パケットを作った回数。全体の状態は使わない。
+        private long emittedVersion = 0L;
 
         //Flags
         private boolean firstTick = true;
@@ -748,11 +788,21 @@ public final class RenderedBone implements BoneEventHandler {
             } finally {
                 lock.unlockWrite(stamp);
             }
-            changedVersion = version;
+            markChanged(version);
             return true;
         }
 
-        private void emitTransformation(int minDuration, @NotNull AnimationBundler bundler) {
+        /** 変更の版を進める（戻さない）。tick のスレッドだけが呼ぶ。 */
+        private void markChanged(long version) {
+            if (version > changedVersion) changedVersion = version;
+        }
+
+        /**
+         * 現在の姿勢のうち、{@code sinceVersion} より後に変わった項目をバンドラーへ詰めます。
+         * 項目の変更は版で覚えるので、同じ版の姿勢を別の {@code sinceVersion}・{@code minDuration} で何度詰めても、
+         * 受け手ごとに最後に送った版より後の分が必ず届きます。
+         */
+        private void emitTransformation(long version, long sinceVersion, int minDuration, @NotNull AnimationBundler bundler) {
             if (transformer == null) return;
             var movement = current;
             var mul = scale.getAsFloat();
@@ -771,6 +821,8 @@ public final class RenderedBone implements BoneEventHandler {
                     .mul(mul)
                     .max(EMPTY_VECTOR),
                 movement.rotation(),
+                version,
+                sinceVersion,
                 bundler
             );
         }

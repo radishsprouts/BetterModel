@@ -8,8 +8,7 @@
 package kr.toxicity.model.bukkit.nms.v26_R3
 
 import kr.toxicity.model.api.nms.AnimationBundler
-import kr.toxicity.model.api.util.MathUtil
-import kr.toxicity.model.nms.DirtyValue
+import kr.toxicity.model.nms.TransformationState
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket
 import net.minecraft.network.syncher.EntityDataAccessor
 import net.minecraft.network.syncher.SynchedEntityData
@@ -62,19 +61,22 @@ internal class TransformationData {
 
     private var _duration = 0
     private val duration get() = SynchedEntityData.DataValue(DISPLAY_INTERPOLATION_DURATION.id, DISPLAY_INTERPOLATION_DURATION.serializer, _duration)
-    private val translation = Item(Vector3f(), DISPLAY_TRANSLATION, MathUtil::isSimilar, Vector3f::set) { Vector3f(it) }
-    private val scale = Item(Vector3f(), DISPLAY_SCALE, MathUtil::isSimilar, Vector3f::set) { Vector3f(it) }
-    private val rotation = Item(Quaternionf(), DISPLAY_ROTATION, MathUtil::isSimilar, Quaternionf::set) { Quaternionf(it) }
+    // 項目ごとの変更の版は core の TransformationState が持つ。骨 1 本に 1 つで、全員の受け手が共有する。
+    private val state = TransformationState()
 
-    fun packDirty(entityId: Int, dest: AnimationBundler) {
-        val i = translation.cleanIndex + scale.cleanIndex + rotation.cleanIndex
-        if (i == 0) return
+    /**
+     * 最後に送った版 [since] より後に変わった項目だけを詰める。変わった項目が無ければ何も詰めない。
+     * 判定は版で行い、詰めても印は消えないので、同じフレームで別の版の受け手に何度詰んでもよい。
+     * 値は複製を渡す（パケットは送信時に別のスレッドで読まれる）。
+     */
+    fun packChanges(entityId: Int, since: Long, dest: AnimationBundler) {
+        val changes = state.changesAfter(since) ?: return
         (dest.mod as ModAnimationBundlerImpl).append(entityId) {
-            dest.standard += ClientboundSetEntityDataPacket(entityId, buildList(i + 2) {
+            dest.standard += ClientboundSetEntityDataPacket(entityId, buildList(changes.count + 2) {
                 add(DISPLAY_INTERPOLATION_DELAY)
-                translation.value?.let { appendPosition(it.value); add(it) }
-                rotation.value?.let { appendRotation(it.value); add(it) }
-                scale.value?.let { appendScale(it.value); add(it) }
+                changes.translation?.let { appendPosition(it); add(dataValue(DISPLAY_TRANSLATION, it)) }
+                changes.rotation?.let { appendRotation(it); add(dataValue(DISPLAY_ROTATION, it)) }
+                changes.scale?.let { appendScale(it); add(dataValue(DISPLAY_SCALE, it)) }
                 appendDuration(_duration); add(duration)
             })
         }
@@ -84,41 +86,23 @@ internal class TransformationData {
         duration: Int,
         translation: Vector3f,
         scale: Vector3f,
-        rotation: Quaternionf
+        rotation: Quaternionf,
+        version: Long
     ) {
         _duration = duration
-        this.translation.set(translation)
-        this.scale.set(scale)
-        this.rotation.set(rotation)
+        state.update(version, translation, scale, rotation)
     }
 
-    fun pack() = listOf(
-        DISPLAY_INTERPOLATION_DELAY,
-        duration,
-        translation.forceValue,
-        scale.forceValue,
-        rotation.forceValue
-    )
-
-    /** 変更の記録（core の共通部分）を、この版の DataValue に包む。 */
-    private class Item<T : Any>(
-        initialValue: T,
-        private val accessor: EntityDataAccessor<T>,
-        dirtyChecker: (T, T) -> Boolean,
-        setter: (T, T) -> Unit,
-        copier: (T) -> T
-    ) {
-        private val state = DirtyValue(initialValue, dirtyChecker, setter, copier)
-
-        val cleanIndex get() = state.cleanIndex
-        val value get() = state.takeIfDirty()?.let { dataValue(it) }
-        // パケットは送信時（別スレッド）に読まれるため、書き換わり続ける現在の値ではなく複製を持たせる（複製は DirtyValue が作る）。
-        val forceValue get() = dataValue(state.copy())
-
-        fun set(other: T) {
-            state.set(other)
-        }
-
-        private fun dataValue(value: T) = SynchedEntityData.DataValue(accessor.id, accessor.serializer, value)
+    fun pack(): List<SynchedEntityData.DataValue<*>> {
+        val all = state.snapshot()
+        return listOf(
+            DISPLAY_INTERPOLATION_DELAY,
+            duration,
+            dataValue(DISPLAY_TRANSLATION, all.translation!!),
+            dataValue(DISPLAY_SCALE, all.scale!!),
+            dataValue(DISPLAY_ROTATION, all.rotation!!)
+        )
     }
+
+    private fun <T : Any> dataValue(accessor: EntityDataAccessor<T>, value: T) = SynchedEntityData.DataValue(accessor.id, accessor.serializer, value)
 }
