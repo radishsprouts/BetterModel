@@ -211,32 +211,40 @@ object SkinManagerImpl : SkinManager, GlobalManager {
         }.thenComposeAsync compose@ { selected ->
             val skin = selected.skin().skin ?: return@compose CompletableFuture.completedFuture<SkinDataImpl?>(null)
             val cape = selected.skin().cape
-            httpClient {
-                fun URI.toFuture() = sendAsync(
-                    buildHttpRequest {
-                        uri(this@toFuture)
-                        GET()
-                    },
-                    HttpResponse.BodyHandlers.ofInputStream()
-                ).thenApplyAsync { response ->
-                    response.body().use { body ->
-                        check(response.statusCode() == 200) { "Unexpected status code ${response.statusCode()}: ${this@toFuture}" }
-                        checkNotNull(ImageIO.read(body)) { "Unable to decode an image: ${this@toFuture}" }
-                    }
-                }
-                skin.toFuture().thenCombine(cape?.toFuture() ?: CompletableFuture.completedFuture(null)) { skin, cape ->
-                    SkinDataImpl(
-                        selected,
-                        skin.convertLegacy(),
-                        cape
-                    )
-                }
-            }.orElse {
-                CompletableFuture.failedFuture(it)
+            // PNG は URL をキーにしたキャッシュ（メモリとディスク）から取る。UUID ごとには落とさない。
+            skinImages.get(skin).thenCombine(cape?.let { skinImages.get(it) } ?: CompletableFuture.completedFuture(null)) { skin, cape ->
+                SkinDataImpl(
+                    selected,
+                    skin.convertLegacy(),
+                    cape
+                )
             }
         }.whenComplete { _, error ->
             error?.handleException("Unable to read this skin: ${profile.info().name}")
         } as CompletableFuture<SkinDataImpl>
+    }
+
+    /**
+     * 皮膚・マントの PNG のキャッシュ。保存先は `.cache/skins`。
+     * 皮膚を変えると URL が変わるので、UUID のキャッシュを消せば新しい皮膚を取る（同じ URL の PNG は取り直さない）。
+     */
+    private val skinImages by lazy {
+        SkinImageCache(DATA_FOLDER.getOrCreateDirectory(".cache").getOrCreateDirectory("skins"), ::download)
+    }
+
+    private fun download(uri: URI): CompletableFuture<ByteArray> = httpClient {
+        sendAsync(
+            buildHttpRequest {
+                uri(uri)
+                GET()
+            },
+            HttpResponse.BodyHandlers.ofByteArray()
+        ).thenApply { response ->
+            check(response.statusCode() == 200) { "Unexpected status code ${response.statusCode()}: $uri" }
+            response.body()
+        }
+    }.orElse {
+        CompletableFuture.failedFuture(it)
     }
 
     override fun removeCache(profile: ModelProfile) = profileCache.synchronous().invalidate(profile.info().id)
@@ -339,6 +347,10 @@ object SkinManagerImpl : SkinManager, GlobalManager {
             CONFIG.namespace(),
             BedrockIds.limbDirectory(CONFIG.pack().useObfuscation())
         )
+        // 起動時と再読み込みの時に、使われていない皮膚の PNG を消す。ディスクを触るので、reload を止めない場所で行う。
+        CompletableFuture.runAsync {
+            runCatching { skinImages.cleanUp() }.handleFailure { "Unable to clean up the skin cache." }
+        }
         if (!CONFIG.module().playerAnimation) return
         write { resource ->
             zipper.assets().add(resource.path(), resource.estimatedSize()) {
