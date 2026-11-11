@@ -392,13 +392,13 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
      *
      * <p>このメソッドはアニメーションの論理的な進行だけを行い、IK の解決も
      * プレイヤーへの変形の送信も行いません。IK を解いて新しいキーフレームを反映するには
-     * {@link #sync(long)} を呼び、受け手ごとに {@link #send(AnimationBundler, long, int)} を呼びます。
+     * {@link #sync(long)} を呼び、受け手ごとに {@link #send(AnimationBundler, long, long, int)} を呼びます。
      *
      * <pre>{@code
      * if (pipeline.tick()) {
      *     pipeline.sync(++version);
      *     AnimationBundler bundler = pipeline.createAnimationBundler();
-     *     pipeline.send(bundler, version - 1, 0);
+     *     pipeline.send(bundler, version, version - 1, 0);
      *     pipeline.forEachNonHidePlayer(bundler::send);
      * }
      * }</pre>
@@ -416,7 +416,7 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
      *
      * <p>通常は {@link #tick()} がアニメーションの更新を返した直後に呼びます。
      * この呼び出しで変化したボーンには指定した版が記録され、
-     * {@link #send(AnimationBundler, long, int)} は受け手がまだ持っていない分だけを送れます。
+     * {@link #send(AnimationBundler, long, long, int)} は受け手がまだ持っていない分だけを送れます。
      *
      * @param version 単調増加の版番号（過去のどの版よりも大きいこと）
      * @see #tick()
@@ -432,19 +432,40 @@ public final class RenderPipeline implements BoneEventHandler, Iterable<Rendered
      *
      * <pre>{@code
      * AnimationBundler bundler = pipeline.createAnimationBundler();
-     * pipeline.send(bundler, lastSentVersion, 2);
+     * pipeline.send(bundler, currentVersion, lastSentVersion, 2);
      * }</pre>
      *
      * @param bundler 変形データを受け取るアニメーションパケットのバンドラー
+     * @param version ティッカーの今の版。項目の変更の版として記録する（骨ごとの変更の版ではなく、全員で共通の今の版を渡す）
      * @param sinceVersion 受け手がすでに持っている最後の版
      * @param minDuration 補間時間の下限（ティック）。受け手が飛ばしたフレーム分を埋める
      * @throws NullPointerException if {@code bundler} is null
      * @see #sync(long)
      * @since 3.7.0
      */
-    public void send(@NotNull AnimationBundler bundler, long sinceVersion, int minDuration) {
+    public void send(@NotNull AnimationBundler bundler, long version, long sinceVersion, int minDuration) {
         Objects.requireNonNull(bundler);
-        forEach(b -> b.sendTransformation(sinceVersion, minDuration, bundler));
+        forEach(b -> b.sendTransformation(version, sinceVersion, minDuration, bundler));
+    }
+
+    /**
+     * 拡大・乗り位置・表示アイテムの変化を検出し、変わった骨に指定した版を記録します（パケットは作りません）。
+     * <p>
+     * これらは骨の姿勢とは別の入力なので、姿勢が変わらない tick でも変わりえます。毎 tick 呼び、
+     * {@code true} が返ったら、姿勢の変化と同じく版を進めて受け手へ送ります。
+     * </p>
+     *
+     * <pre>{@code
+     * if (pipeline.syncExternal(version + 1)) version++;
+     * }</pre>
+     *
+     * @param version 単調増加の版番号（過去のどの版よりも大きいこと）
+     * @return 変化した骨があれば {@code true}
+     * @see #sync(long)
+     * @since 3.7.0
+     */
+    public boolean syncExternal(long version) {
+        return matchTree(b -> b.syncExternal(version));
     }
 
     /**

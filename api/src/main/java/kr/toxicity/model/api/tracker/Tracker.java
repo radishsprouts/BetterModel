@@ -633,6 +633,8 @@ public sealed abstract class Tracker implements AutoCloseable permits EntityTrac
         if (!EventUtil.call(ModelSpawnAtPlayerEvent.class, () -> new ModelSpawnAtPlayerEvent(player, this)).triggered()) return false;
         return pipeline.spawn(player, bundler, spawned -> {
             LogUtil.debug(DebugConfig.DebugOption.TRACKER, () -> getClass().getSimpleName() + " is spawned at player " + player.name() + ": " + name());
+            // スポーンのパケットの姿勢が古くても、次の tick で最新の姿勢を受け取らせる
+            animationTicker.spawned(player.uuid());
             task(spawned::load);
         });
     }

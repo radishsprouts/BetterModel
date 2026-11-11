@@ -46,7 +46,8 @@ class TransformationStateTest {
     fun `同じフレームで、版の違う受け手に続けて詰めても、どちらにも変わった項目が届く`() {
         // 不具合 (a): 2 人目以降のバンドラーでは「変化なし」と判定され、何も詰められなかった
         val state = TransformationState()
-        state.update(7, Vector3f(1f, 2f, 3f), Vector3f(1f, 1f, 1f), Quaternionf())
+        // 拡大は初期値（TransformationState の初期値は 0）と同じ値を渡し、変わっていない項目として扱わせる
+        state.update(7, Vector3f(1f, 2f, 3f), Vector3f(), Quaternionf())
         val near = assertNotNull(state.changesAfter(6))
         val far = assertNotNull(state.changesAfter(2))
         assertEquals(Vector3f(1f, 2f, 3f), near.translation)
@@ -172,5 +173,67 @@ class TransformationStateTest {
         state.update(2, Vector3f(9f, 9f, 9f), Vector3f(2f, 2f, 2f), Quaternionf())
         assertEquals(3, all.count)
         assertEquals(Vector3f(1f, 1f, 1f), all.translation)
+    }
+
+    @Test
+    fun `無人の間に姿勢が変わっても、後から来た視聴者に最新の姿勢が全部届く`() {
+        // 視聴者がいない間（または遠い視聴者が番を待つ間）は、骨が動いても状態へ取り込まれず、状態は古いまま。
+        // 新しい視聴者へのスポーンのパケットは、その古い値で作られる。
+        val state = TransformationState()
+        state.update(1, Vector3f(1f, 0f, 0f), Vector3f(1f, 1f, 1f), Quaternionf())
+        // 版 2〜4 は無人で、骨だけが動いた。版 5 で新しい視聴者が来る（何も受け取っていない版 -1 で登録）。
+        val latestRotation = Quaternionf().rotateY(0.9f)
+        state.update(5, Vector3f(7f, 0f, 0f), Vector3f(2f, 2f, 2f), latestRotation)
+        val changes = assertNotNull(state.changesAfter(-1))
+        assertEquals(Vector3f(7f, 0f, 0f), changes.translation)
+        assertEquals(Vector3f(2f, 2f, 2f), changes.scale)
+        assertTrue(latestRotation.equals(assertNotNull(changes.rotation), 1e-6f), "回転")
+        // 受け取った後（版 5 まで）は、同じ値で届かない
+        assertNull(state.changesAfter(5))
+    }
+
+    @Test
+    fun `一度も変わっていない項目は、新しい視聴者にも詰めない（スポーンの初期値と同じ）`() {
+        val state = TransformationState()
+        state.update(3, Vector3f(1f, 0f, 0f), Vector3f(), Quaternionf())
+        val changes = assertNotNull(state.changesAfter(-1))
+        assertEquals(1, changes.count)
+        assertNull(changes.rotation)
+        assertNull(changes.scale)
+    }
+
+    @Test
+    fun `視聴者の版がずれている時、骨が止まった後の拡大の変化が近い人にも遠い人にも届く`() {
+        val state = TransformationState()
+        // 骨の姿勢は版 5 で止まった。近い人は版 5 まで、遠い人は版 3 までを受け取っている。
+        state.update(5, Vector3f(1f, 0f, 0f), Vector3f(1f, 1f, 1f), Quaternionf())
+        assertNotNull(state.changesAfter(3))
+        assertNull(state.changesAfter(5))
+
+        // 版 6 で拡大だけが変わった（骨の姿勢は変わらない）。ティッカーの今の版 6 で記録する。
+        state.update(6, Vector3f(1f, 0f, 0f), Vector3f(2f, 2f, 2f), Quaternionf())
+        val near = assertNotNull(state.changesAfter(5), "近い人に拡大の変化が届かない")
+        assertEquals(Vector3f(2f, 2f, 2f), near.scale)
+        assertNull(near.translation)
+
+        // 遠い人の番は版 8。その間にも骨は止まったまま。今の版 8 で詰め直しても、遠い人は版 3 より後の分を全部受け取る。
+        state.update(8, Vector3f(1f, 0f, 0f), Vector3f(2f, 2f, 2f), Quaternionf())
+        val far = assertNotNull(state.changesAfter(3), "遠い人に変化が届かない")
+        assertEquals(Vector3f(2f, 2f, 2f), far.scale)
+        assertEquals(Vector3f(1f, 0f, 0f), far.translation)
+        // 詰め直しても版は進まないので、近い人（版 6 まで受け取り済み）には重ねて届かない
+        assertNull(state.changesAfter(6))
+    }
+
+    @Test
+    fun `項目の版に骨自身の変更の版を使うと、先に受け取った近い人は拡大の変化を取りこぼす（今の版を渡す理由）`() {
+        val state = TransformationState()
+        state.update(5, Vector3f(1f, 0f, 0f), Vector3f(1f, 1f, 1f), Quaternionf())
+        // 近い人は版 5 まで受け取り済み。骨の変更の版は 5 のまま、拡大だけが変わって詰め直された。
+        state.update(5, Vector3f(1f, 0f, 0f), Vector3f(2f, 2f, 2f), Quaternionf())
+        assertNull(state.changesAfter(5), "骨の版 5 で記録すると、版 5 まで受け取った人には届かない")
+        // ティッカーの今の版（6）で記録すれば届く
+        state.update(6, Vector3f(1f, 0f, 0f), Vector3f(3f, 3f, 3f), Quaternionf())
+        assertEquals(Vector3f(3f, 3f, 3f), assertNotNull(state.changesAfter(5)).scale)
     }
 }
