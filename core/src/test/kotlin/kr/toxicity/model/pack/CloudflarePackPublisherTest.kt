@@ -15,6 +15,7 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -86,9 +87,15 @@ class CloudflarePackPublisherTest {
 
     private fun publisher(
         config: CloudflarePackConfig = config(),
-        verifier: ((String, ByteArray) -> Boolean)? = null,
+        verifier: ((String, ByteArray) -> VerifyResult)? = null,
         delays: List<Long> = listOf(1L, 1L),
-    ) = CloudflarePackPublisher(config, File(dir, ".cache/cloudflare-pack.properties"), "http://127.0.0.1:${server.address.port}/client/v4", delays, verifier)
+        verifyIntervalMillis: Long = 1L,
+        verifyTimeoutMillis: Long = 5_000L,
+        onWaiting: (String) -> Unit = {},
+    ) = CloudflarePackPublisher(
+        config, File(dir, ".cache/cloudflare-pack.properties"), "http://127.0.0.1:${server.address.port}/client/v4", delays, verifier,
+        verifyIntervalMillis = verifyIntervalMillis, verifyTimeoutMillis = verifyTimeoutMillis, onWaiting = onWaiting,
+    )
 
     private fun bundle(seed: Int = 1, size: Int = 5_000) = PackBundle(ByteArray(size) { (it * seed).toByte() })
 
@@ -281,12 +288,75 @@ class CloudflarePackPublisherTest {
 
     @Test
     fun `公開した URL から取得できなければ失敗し、状態を保存しない`() {
-        val failed = assertIs<PublishResult.Failed>(publisher(verifier = { _, _ -> false }).publish(bundle()))
+        val failed = assertIs<PublishResult.Failed>(
+            publisher(verifier = { _, _ -> VerifyResult.RETRY }, verifyTimeoutMillis = 50L).publish(bundle())
+        )
         assertTrue(failed.message.contains("取得できませんでした"))
         calls.clear()
         // 保存されていないので、次回は中身が同じでも呼び直す
-        assertIs<PublishResult.Published>(publisher(verifier = { _, _ -> true }).publish(bundle()))
+        assertIs<PublishResult.Published>(publisher(verifier = { _, _ -> VerifyResult.OK }).publish(bundle()))
         assertTrue(calls.isNotEmpty())
+    }
+
+    @Test
+    fun `最初の数回は取れなくても、あとで取れれば成功し、待ち始めを1回だけ知らせる`() {
+        val tries = AtomicInteger()
+        val waiting = CopyOnWriteArrayList<String>()
+        val result = publisher(
+            verifier = { _, _ -> if (tries.incrementAndGet() <= 4) VerifyResult.RETRY else VerifyResult.OK },
+            onWaiting = { waiting += it },
+        ).publish(bundle())
+        val published = assertIs<PublishResult.Published>(result)
+        assertEquals(5, tries.get())
+        assertEquals(listOf(published.url), waiting.toList(), "毎回ではなく最初の失敗で1回")
+    }
+
+    @Test
+    fun `最後まで取れなければ、待ち時間の間に何度か試して失敗する`() {
+        val tries = AtomicInteger()
+        val failed = assertIs<PublishResult.Failed>(
+            publisher(
+                verifier = { _, _ -> tries.incrementAndGet(); VerifyResult.RETRY },
+                verifyTimeoutMillis = 100L,
+            ).publish(bundle())
+        )
+        assertTrue(failed.message.contains("取得できませんでした"))
+        assertTrue(tries.get() > 1, "再試行している")
+    }
+
+    @Test
+    fun `待っても直らない失敗は再試行しない`() {
+        val tries = AtomicInteger()
+        val failed = assertIs<PublishResult.Failed>(
+            publisher(verifier = { _, _ -> tries.incrementAndGet(); VerifyResult.FATAL }).publish(bundle())
+        )
+        assertTrue(failed.message.contains("取得できませんでした"))
+        assertEquals(1, tries.get())
+    }
+
+    @Test
+    fun `待っている間に割り込まれたら、すぐやめて中断として返す`() {
+        val tries = AtomicInteger()
+        val result = AtomicReference<PublishResult>()
+        val worker = Thread {
+            result.set(
+                publisher(
+                    verifier = { _, _ -> tries.incrementAndGet(); VerifyResult.RETRY },
+                    verifyIntervalMillis = 600_000L,
+                    verifyTimeoutMillis = 1_200_000L,
+                ).publish(bundle())
+            )
+        }
+        worker.start()
+        // 1回目の確認が済んで、長い間隔の sleep に入ってから割り込む
+        while (tries.get() < 1) Thread.sleep(5)
+        Thread.sleep(50)
+        worker.interrupt()
+        worker.join(10_000)
+        assertFalse(worker.isAlive, "割り込みで直ちに戻る")
+        val failed = assertIs<PublishResult.Failed>(result.get())
+        assertTrue(failed.message.contains("中断"))
+        assertEquals(1, tries.get())
     }
 
     @Test

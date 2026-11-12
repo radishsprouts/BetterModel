@@ -99,6 +99,18 @@ data class CloudflarePackConfig(
     }
 }
 
+/** 公開した URL からパックを取れるかの1回の確認の結果。 */
+enum class VerifyResult {
+    /** 取れて、SHA-1 も一致した */
+    OK,
+
+    /** 接続・TLS の失敗、404、5xx など。証明書の発行や DNS の反映を待てば直りうるので、再試行する */
+    RETRY,
+
+    /** 中身が食い違う等、待っても直らない失敗。再試行しない */
+    FATAL,
+}
+
 /** [CloudflarePackPublisher.publish] の結果。 */
 sealed interface PublishResult {
     /**
@@ -129,14 +141,22 @@ sealed interface PublishResult {
  * @property stateFile 前回の状態の保存先
  * @property apiBase API の基点（テストで差し替える）
  * @property retryDelaysMillis 一時的な失敗（通信エラー・429・5xx）の再試行の間隔。要素数が再試行の上限
- * @property verifier 公開した URL からパックが取れるかの確認（URL と期待する SHA-1 を受け取る）。null なら確認しない
+ * @property verifier 公開した URL からパックが取れるかの1回の確認（URL と期待する SHA-1 を受け取る）。null なら確認しない。
+ *   [VerifyResult.RETRY] の間は [verifyIntervalMillis] おきに [verifyTimeoutMillis] まで繰り返す
+ *   （新しいカスタムドメインは、証明書の発行が済むまで TLS の握手に失敗する）
+ * @property verifyIntervalMillis 取得確認の再試行の間隔
+ * @property verifyTimeoutMillis 取得確認を待つ最長の時間
+ * @property onWaiting 取得確認の最初の失敗で1回だけ呼ぶ（待っている旨をログに出すため）。引数は URL
  */
 class CloudflarePackPublisher(
     private val config: CloudflarePackConfig,
     private val stateFile: File,
     private val apiBase: String = API_BASE,
     private val retryDelaysMillis: List<Long> = listOf(1_000L, 3_000L, 9_000L),
-    private val verifier: ((String, ByteArray) -> Boolean)? = null,
+    private val verifier: ((String, ByteArray) -> VerifyResult)? = null,
+    private val verifyIntervalMillis: Long = VERIFY_INTERVAL_MILLIS,
+    private val verifyTimeoutMillis: Long = VERIFY_TIMEOUT_MILLIS,
+    private val onWaiting: (String) -> Unit = {},
     private val client: HttpClient = HttpClient.newBuilder()
         .followRedirects(HttpClient.Redirect.NORMAL)
         .connectTimeout(Duration.ofSeconds(10))
@@ -170,7 +190,7 @@ class CloudflarePackPublisher(
         }?.getProperty(KEY_URL)?.takeIf(String::isNotEmpty)?.let { return PublishResult.Published(it, true) }
         return try {
             val url = upload(bundle, fileName)
-            if (verifier != null && !verifier.invoke(url, bundle.sha1)) {
+            if (verifier != null && !awaitReachable(verifier, url, bundle.sha1)) {
                 return PublishResult.Failed("アップロードしましたが、$url からパックを取得できませんでした（時間を置いてリロードしてください）。")
             }
             saveState(bundle, url)
@@ -182,6 +202,28 @@ class CloudflarePackPublisher(
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             PublishResult.Failed("アップロードが中断されました")
+        }
+    }
+
+    /**
+     * 取れるようになるまで、間隔を空けて確認する。[VerifyResult.RETRY] だけ、[verifyTimeoutMillis] まで繰り返す。
+     * 割り込まれたら [InterruptedException] をそのまま投げる（[publish] が中断として扱う）。
+     */
+    private fun awaitReachable(check: (String, ByteArray) -> VerifyResult, url: String, sha1: ByteArray): Boolean {
+        val deadline = System.nanoTime() + verifyTimeoutMillis * 1_000_000L
+        var notified = false
+        while (true) {
+            when (check(url, sha1)) {
+                VerifyResult.OK -> return true
+                VerifyResult.FATAL -> return false
+                VerifyResult.RETRY -> Unit
+            }
+            if (System.nanoTime() + verifyIntervalMillis * 1_000_000L > deadline) return false
+            if (!notified) {
+                notified = true
+                onWaiting(url)
+            }
+            Thread.sleep(verifyIntervalMillis)
         }
     }
 
@@ -412,31 +454,35 @@ class CloudflarePackPublisher(
         private const val KEY_WORKER = "worker-name"
         private const val KEY_DOMAIN = "custom-domain"
 
+        /** 取得確認の再試行の間隔（証明書の発行・DNS の反映待ち）。 */
+        const val VERIFY_INTERVAL_MILLIS = 15_000L
+
+        /** 取得確認を待つ最長の時間（3 分）。 */
+        const val VERIFY_TIMEOUT_MILLIS = 180_000L
+
         /**
-         * 公開した URL を取って SHA-1 を照合する既定の確認。反映の遅れを見込んで間隔を空けて繰り返す。
+         * 公開した URL を1回取って SHA-1 を照合する既定の確認。繰り返しは [CloudflarePackPublisher] が行う。
+         * 接続・TLS の失敗、404、5xx は [VerifyResult.RETRY]、中身の食い違いやその他の応答は [VerifyResult.FATAL]。
+         * 割り込みは握りつぶさず、そのまま投げる。
          *
          * @param client 取得に使うクライアント
-         * @param attempts 試す回数
-         * @param delayMillis 試行の間隔
          */
         @JvmStatic
-        fun downloadVerifier(
-            client: HttpClient,
-            attempts: Int = 12,
-            delayMillis: Long = 5_000L,
-        ): (String, ByteArray) -> Boolean = { url, sha1 ->
-            var ok = false
-            for (i in 0 until attempts) {
-                ok = runCatching {
-                    val request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(60)).GET().build()
-                    val response = client.send(request, HttpResponse.BodyHandlers.ofByteArray())
-                    response.statusCode() == 200 &&
-                        MessageDigest.getInstance("SHA-1").digest(response.body()).contentEquals(sha1)
-                }.getOrDefault(false)
-                if (ok) break
-                if (i < attempts - 1) Thread.sleep(delayMillis)
+        fun downloadVerifier(client: HttpClient): (String, ByteArray) -> VerifyResult = { url, sha1 ->
+            try {
+                val request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(60)).GET().build()
+                val response = client.send(request, HttpResponse.BodyHandlers.ofByteArray())
+                val status = response.statusCode()
+                when {
+                    status == 200 ->
+                        if (MessageDigest.getInstance("SHA-1").digest(response.body()).contentEquals(sha1)) VerifyResult.OK
+                        else VerifyResult.FATAL
+                    status == 404 || status >= 500 -> VerifyResult.RETRY
+                    else -> VerifyResult.FATAL
+                }
+            } catch (e: IOException) {
+                VerifyResult.RETRY
             }
-            ok
         }
     }
 }
