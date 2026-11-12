@@ -72,18 +72,23 @@ class CloudflarePackPublisherTest {
     private fun ok(result: String) = 200 to """{"success":true,"errors":[],"result":$result}"""
 
     private fun defaultResponse(call: Call): Pair<Int, String> = when {
-        call.path.endsWith("/assets-upload-session") -> ok("""{"jwt":"upload-jwt","buckets":[["h"]]}""")
+        // 全部が新しいファイルとして、マニフェストの全ハッシュを1つの bucket で要求する
+        call.path.endsWith("/assets-upload-session") ->
+            ok("""{"jwt":"upload-jwt","buckets":[[${hashesOf(call.body).joinToString(",") { "\"$it\"" }}]]}""")
         call.path.endsWith("/workers/assets/upload") -> 201 to """{"success":true,"errors":[],"result":{"jwt":"completion-jwt"}}"""
         call.path.endsWith("/subdomain") -> ok("""{"enabled":false}""")
         call.path.endsWith("/workers/domains") -> ok("""{"hostname":"bettermodel.minecraft.kaiware.games"}""")
         else -> ok("{}")
     }
 
+    private fun hashesOf(body: String) = Regex("\"hash\":\"([0-9a-f]+)\"").findAll(body).map { it.groupValues[1] }.toList()
+
     private fun config(
         token: String = "secret-token",
         domain: String = DOMAIN,
+        fileName: String = FILE,
         env: (String) -> String? = { null },
-    ) = CloudflarePackConfig.of("acc123", token, "bettermodel-pack", domain, null, env)
+    ) = CloudflarePackConfig.of("acc123", token, "bettermodel-pack", domain, null, fileName, env)
 
     private fun publisher(
         config: CloudflarePackConfig = config(),
@@ -92,16 +97,54 @@ class CloudflarePackPublisherTest {
         verifyIntervalMillis: Long = 1L,
         verifyTimeoutMillis: Long = 5_000L,
         onWaiting: (String) -> Unit = {},
+        fetcher: (String) -> FetchResult = { FetchResult.NotFound },
     ) = CloudflarePackPublisher(
         config, File(dir, ".cache/cloudflare-pack.properties"), "http://127.0.0.1:${server.address.port}/client/v4", delays, verifier,
-        verifyIntervalMillis = verifyIntervalMillis, verifyTimeoutMillis = verifyTimeoutMillis, onWaiting = onWaiting,
+        verifyIntervalMillis = verifyIntervalMillis, verifyTimeoutMillis = verifyTimeoutMillis, onWaiting = onWaiting, fetcher = fetcher,
     )
 
     private fun bundle(seed: Int = 1, size: Int = 5_000) = PackBundle(ByteArray(size) { (it * seed).toByte() })
 
     private companion object {
         const val DOMAIN = "bettermodel.minecraft.kaiware.games"
+        const val FILE = "BetterModel-ResourcePack-dev.zip"
+        const val OTHER = "/BetterModel-ResourcePack.zip"
     }
+
+    private fun entryJson(bytes: ByteArray) = """{"hash":"${CloudflarePackPublisher.manifestHash(bytes)}","size":${bytes.size}}"""
+
+    /** Worker に置いてある目録（パス順）。 */
+    private fun catalogJson(files: Map<String, ByteArray>) =
+        """{"files":{${files.toSortedMap().entries.joinToString(",") { "\"${it.key}\":${entryJson(it.value)}" }}}}"""
+
+    private fun isCatalog(url: String) = url.substringBefore('?').endsWith(CloudflarePackPublisher.CATALOG_PATH)
+
+    /**
+     * 偽の Worker の公開状態。Worker を PUT する前は [before] の目録を返し、PUT した後は自分の行（[own]）を足した目録を返す。
+     * 目録以外の URL は [extra] で答える。
+     */
+    private fun world(
+        before: Map<String, ByteArray>,
+        own: ByteArray,
+        extra: (String) -> FetchResult = { FetchResult.NotFound },
+    ): (String) -> FetchResult = { url ->
+        if (isCatalog(url)) {
+            val done = calls.any { it.method == "PUT" && it.path.endsWith("/workers/scripts/bettermodel-pack") }
+            FetchResult.Found((if (done) before + ("/$FILE" to own) else before).let(::catalogJson).toByteArray())
+        } else extra(url)
+    }
+
+    /** 本物の Cloudflare は、すでにある（他の版が持つ）ハッシュを bucket に入れない。[known] のハッシュを要求しない応答にする。 */
+    private fun alreadyKnown(vararg known: ByteArray) {
+        val skip = known.map { CloudflarePackPublisher.manifestHash(it) }.toSet()
+        override = { call, _ ->
+            if (call.path.endsWith("/assets-upload-session")) {
+                ok("""{"jwt":"upload-jwt","buckets":[[${(hashesOf(call.body) - skip).joinToString(",") { "\"$it\"" }}]]}""")
+            } else null
+        }
+    }
+
+    private fun calls(method: String, suffix: String) = calls.filter { it.method == method && it.path.endsWith(suffix) }
 
     private fun pathsOf() = calls.map { "${it.method} ${it.path}" }
 
@@ -110,7 +153,7 @@ class CloudflarePackPublisherTest {
         val b = bundle()
         val result = publisher().publish(b)
         val published = assertIs<PublishResult.Published>(result)
-        assertEquals("https://$DOMAIN/bettermodel-${b.sha1Hex.take(12)}.zip", published.url)
+        assertEquals("https://$DOMAIN/$FILE", published.url)
         assertFalse(published.reused)
         assertEquals(
             listOf(
@@ -127,7 +170,8 @@ class CloudflarePackPublisherTest {
         assertEquals("Bearer upload-jwt", calls[1].auth, "ファイルのアップロードにはセッションの jwt を使う")
         assertEquals("base64=true", calls[1].query)
         assertEquals("Bearer secret-token", calls[2].auth)
-        assertTrue(calls[0].body.contains("\"/bettermodel-${b.sha1Hex.take(12)}.zip\""), "マニフェストに /bettermodel-<12桁>.zip だけを入れる")
+        assertTrue(calls[0].body.contains("\"/$FILE\""), "マニフェストに設定の file-name のパスを入れる")
+        assertTrue(calls[0].body.contains("\"${CloudflarePackPublisher.CATALOG_PATH}\""), "目録も一緒に置く")
         assertTrue(calls[0].body.contains("\"size\":5000"))
         assertTrue(calls[2].body.contains("completion-jwt"), "Worker の PUT に completion token を渡す")
         assertTrue(calls[2].body.contains("\"main_module\":\"worker.js\""))
@@ -170,7 +214,7 @@ class CloudflarePackPublisherTest {
     fun `カスタムドメインの指定は大文字・スキーム・末尾のスラッシュとドットを直して付ける`() {
         val b = bundle()
         val result = assertIs<PublishResult.Published>(publisher(config(domain = "https://Pack.Example.com./")).publish(b))
-        assertEquals("https://pack.example.com/bettermodel-${b.sha1Hex.take(12)}.zip", result.url)
+        assertEquals("https://pack.example.com/$FILE", result.url)
         val domain = calls.first { it.path.endsWith("/workers/domains") }
         assertEquals("PUT", domain.method)
         assertTrue(domain.body.contains("\"hostname\":\"pack.example.com\""))
@@ -370,6 +414,199 @@ class CloudflarePackPublisherTest {
         assertNull(props.getProperty("api-token"))
         assertFalse(file.readText().contains("secret-token"))
         assertEquals(1, dir.resolve(".cache").listFiles()!!.size, "一時ファイルを残さない")
+    }
+
+    @Test
+    fun `他のファイルがマニフェストに残り、目録も他の行を引き継いで置かれる`() {
+        val other = ByteArray(300) { (it * 7).toByte() }
+        val b = bundle()
+        alreadyKnown(other)
+        val published = assertIs<PublishResult.Published>(publisher(fetcher = world(mapOf(OTHER to other), b.bytes)).publish(b))
+        assertEquals("https://$DOMAIN/$FILE", published.url)
+        val manifest = calls[0].body
+        assertTrue(manifest.contains("\"$OTHER\":{\"hash\":\"${CloudflarePackPublisher.manifestHash(other)}\",\"size\":300}"), "他のファイルの行をそのまま載せる")
+        assertTrue(manifest.contains("\"/$FILE\":{\"hash\":\"${CloudflarePackPublisher.manifestHash(b.bytes)}\""))
+        val expectedCatalog = catalogJson(mapOf(OTHER to other, "/$FILE" to b.bytes)).toByteArray()
+        assertTrue(
+            manifest.contains("\"${CloudflarePackPublisher.CATALOG_PATH}\":{\"hash\":\"${CloudflarePackPublisher.manifestHash(expectedCatalog, "json")}\",\"size\":${expectedCatalog.size}}"),
+            "目録は他の行と自分の行を持つ",
+        )
+    }
+
+    @Test
+    fun `自分の file-name のファイルだけが差し替わり、他のファイルの行は変わらない`() {
+        val old = ByteArray(200) { 1 }
+        val other = ByteArray(300) { 2 }
+        val b = bundle()
+        alreadyKnown(other)
+        assertIs<PublishResult.Published>(publisher(fetcher = world(mapOf("/$FILE" to old, OTHER to other), b.bytes)).publish(b))
+        val manifest = calls[0].body
+        assertFalse(manifest.contains(CloudflarePackPublisher.manifestHash(old)), "自分の古い行は消える")
+        assertTrue(manifest.contains(CloudflarePackPublisher.manifestHash(b.bytes)))
+        assertTrue(manifest.contains(CloudflarePackPublisher.manifestHash(other)), "他のファイルは変えない")
+        assertEquals(3, hashesOf(manifest).size, "自分・他のファイル・目録の3行")
+    }
+
+    @Test
+    fun `他のファイルのハッシュを要求されたら、カスタムドメインから取って一緒に上げる`() {
+        val other = ByteArray(300) { (it * 5).toByte() }
+        val b = bundle()
+        val fetched = CopyOnWriteArrayList<String>()
+        // fake の API は、マニフェストの全ハッシュ（他のファイルも）を bucket で要求する
+        assertIs<PublishResult.Published>(
+            publisher(fetcher = world(mapOf(OTHER to other), b.bytes, extra = {
+                fetched += it
+                if (it.substringBefore('?').endsWith(OTHER)) FetchResult.Found(other) else FetchResult.NotFound
+            })).publish(b)
+        )
+        assertTrue(fetched.any { it.startsWith("https://$DOMAIN$OTHER?") }, "他のファイルをカスタムドメインから取る")
+        val upload = calls("POST", "/workers/assets/upload").single()
+        val otherHash = CloudflarePackPublisher.manifestHash(other)
+        assertTrue(upload.body.contains("name=\"$otherHash\""))
+        assertTrue(upload.body.contains(java.util.Base64.getEncoder().encodeToString(other)), "取った中身（base64）を送る")
+        assertEquals(1, calls("PUT", "/workers/scripts/bettermodel-pack").size)
+    }
+
+    @Test
+    fun `他のファイルを取れなければ、他のパックを消さないよう中止し、何も PUT しない`() {
+        val other = ByteArray(300) { 9 }
+        val failed = assertIs<PublishResult.Failed>(
+            publisher(fetcher = { if (isCatalog(it)) FetchResult.Found(catalogJson(mapOf(OTHER to other)).toByteArray()) else FetchResult.NotFound })
+                .publish(bundle())
+        )
+        assertTrue(failed.message.contains("中止"), failed.message)
+        assertTrue(failed.message.contains(OTHER))
+        assertTrue(calls.none { it.method == "PUT" }, "Worker を更新しない")
+        assertTrue(calls("POST", "/workers/assets/upload").isEmpty(), "1つも送らない")
+        assertFalse(File(dir, ".cache/cloudflare-pack.properties").exists())
+
+        // 取れても中身が目録と違えば同じく中止する
+        calls.clear()
+        val mismatch = assertIs<PublishResult.Failed>(
+            publisher(fetcher = {
+                when {
+                    isCatalog(it) -> FetchResult.Found(catalogJson(mapOf(OTHER to other)).toByteArray())
+                    else -> FetchResult.Found(ByteArray(300) { 8 })
+                }
+            }).publish(bundle(seed = 4))
+        )
+        assertTrue(mismatch.message.contains("食い違"))
+        assertTrue(calls.none { it.method == "PUT" })
+    }
+
+    @Test
+    fun `目録を読めない時は、Worker がまだ無ければ空として続け、あれば中止する`() {
+        // 初回（Worker が無い）: 設定の取得が 404
+        override = { call, _ ->
+            if (call.path.endsWith("/settings")) 404 to """{"success":false,"errors":[{"code":10007,"message":"This Worker does not exist"}],"result":null}""" else null
+        }
+        val first = publisher(fetcher = { FetchResult.Unreachable("TLS") }).publish(bundle())
+        assertIs<PublishResult.Published>(first)
+        assertEquals(1, calls("GET", "/workers/scripts/bettermodel-pack/settings").size)
+
+        // Worker はあるのに目録を取れない: 他のパックを消さないよう中止
+        calls.clear()
+        override = { _, _ -> null }
+        val failed = assertIs<PublishResult.Failed>(publisher(fetcher = { FetchResult.Unreachable("TLS") }).publish(bundle(seed = 6)))
+        assertTrue(failed.message.contains("中止"))
+        assertTrue(calls.none { it.method == "PUT" || it.method == "POST" })
+
+        // 目録が壊れている時も中止
+        calls.clear()
+        val broken = assertIs<PublishResult.Failed>(
+            publisher(fetcher = { if (isCatalog(it)) FetchResult.Found("not json".toByteArray()) else FetchResult.NotFound }).publish(bundle(seed = 7))
+        )
+        assertTrue(broken.message.contains("中止"))
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test
+    fun `不正な file-name は、何もアップロードせず理由を返す`() {
+        val bad = listOf("", "../x.zip", "a/b.zip", "a\\b.zip", "x.txt", "x.ZIP", "a b.zip", ".hidden.zip", "a..b.zip", "日本語.zip", "x".repeat(100) + ".zip")
+        for (name in bad) {
+            val config = config(fileName = name)
+            val failed = assertIs<PublishResult.Failed>(publisher(config).publish(bundle()), name)
+            assertTrue(failed.message.contains("file-name"), name)
+            assertTrue(config.missing().any { it.contains("file-name") }, name)
+        }
+        assertTrue(calls.isEmpty(), "アップロードも API の呼び出しもしない")
+        assertFalse(File(dir, ".cache/cloudflare-pack.properties").exists())
+        // 使える名前
+        for (name in listOf("BetterModel-ResourcePack.zip", "BetterModel-ResourcePack-dev.zip", "a_b-1.2.zip")) {
+            assertNull(config(fileName = name).fileNameProblem(), name)
+        }
+        // キーが無い（null）時は既定の名前
+        assertEquals("BetterModel-ResourcePack.zip", CloudflarePackConfig.of("a", "t", null, null, null) { null }.fileName)
+    }
+
+    @Test
+    fun `前回の状態の照合に file-name も効く`() {
+        val b = bundle()
+        assertIs<PublishResult.Published>(publisher().publish(b))
+        calls.clear()
+        // 同じ file-name なら呼ばない
+        assertTrue(assertIs<PublishResult.Published>(publisher().publish(b)).reused)
+        assertTrue(calls.isEmpty())
+        // file-name が変われば、同じ中身でもアップロードし直し、URL も新しい名前になる
+        val renamed = assertIs<PublishResult.Published>(publisher(config(fileName = "BetterModel-ResourcePack.zip")).publish(b))
+        assertFalse(renamed.reused)
+        assertEquals("https://$DOMAIN/BetterModel-ResourcePack.zip", renamed.url)
+        assertTrue(calls.isNotEmpty())
+        val props = java.util.Properties().also { p -> File(dir, ".cache/cloudflare-pack.properties").inputStream().use(p::load) }
+        assertEquals("BetterModel-ResourcePack.zip", props.getProperty("file-name"))
+    }
+
+    @Test
+    fun `取得確認は自分の file-name の URL で行う`() {
+        val urls = CopyOnWriteArrayList<String>()
+        assertIs<PublishResult.Published>(publisher(verifier = { url, _ -> urls += url; VerifyResult.OK }).publish(bundle()))
+        assertEquals(listOf("https://$DOMAIN/$FILE"), urls.toList())
+    }
+
+    @Test
+    fun `アップロード後に他のファイルの行が落ちていたら、1回だけ戻す`() {
+        val other = ByteArray(300) { 3 }
+        val b = bundle()
+        val reads = AtomicInteger()
+        val full = catalogJson(mapOf(OTHER to other, "/$FILE" to b.bytes)).toByteArray()
+        val dropped = catalogJson(mapOf("/$FILE" to b.bytes)).toByteArray() // 別の機械が後から上げて、他の行を落とした
+        val result = publisher(fetcher = {
+            when {
+                // 1回目: アップロード前（他の行がある）／2回目: アップロード後の確認（落ちている）／3回目: やり直し後（戻っている）
+                isCatalog(it) -> when (reads.incrementAndGet()) {
+                    1 -> FetchResult.Found(catalogJson(mapOf(OTHER to other)).toByteArray())
+                    2 -> FetchResult.Found(dropped)
+                    else -> FetchResult.Found(full)
+                }
+                it.substringBefore('?').endsWith(OTHER) -> FetchResult.Found(other)
+                else -> FetchResult.NotFound
+            }
+        }).publish(b)
+        assertIs<PublishResult.Published>(result)
+        assertEquals(2, calls("PUT", "/workers/scripts/bettermodel-pack").size, "戻すために1回だけやり直す")
+        assertEquals(2, calls("POST", "/assets-upload-session").size)
+        assertTrue(calls("POST", "/assets-upload-session")[1].body.contains(CloudflarePackPublisher.manifestHash(other)), "やり直しのマニフェストに他の行を載せる")
+        assertEquals(3, reads.get())
+    }
+
+    @Test
+    fun `やり直しても戻らなければ失敗し、状態を保存しない（やり直しは1回まで）`() {
+        val other = ByteArray(300) { 3 }
+        val b = bundle()
+        val reads = AtomicInteger()
+        val dropped = catalogJson(mapOf("/$FILE" to b.bytes)).toByteArray()
+        val failed = assertIs<PublishResult.Failed>(
+            publisher(fetcher = {
+                when {
+                    isCatalog(it) -> if (reads.incrementAndGet() == 1) FetchResult.Found(catalogJson(mapOf(OTHER to other)).toByteArray()) else FetchResult.Found(dropped)
+                    it.substringBefore('?').endsWith(OTHER) -> FetchResult.Found(other)
+                    else -> FetchResult.NotFound
+                }
+            }).publish(b)
+        )
+        assertTrue(failed.message.contains(OTHER), failed.message)
+        assertEquals(2, calls("PUT", "/workers/scripts/bettermodel-pack").size, "やり直しは1回だけ")
+        assertFalse(File(dir, ".cache/cloudflare-pack.properties").exists())
     }
 
     @Test

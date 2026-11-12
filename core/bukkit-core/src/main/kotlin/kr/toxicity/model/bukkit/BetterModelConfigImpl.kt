@@ -68,6 +68,7 @@ class BetterModelConfigImpl(yaml: ConfigurationSection) : BetterModelConfig {
                     apiToken = cf?.getString("api-token"),
                     workerName = cf?.getString("worker-name"),
                     customDomain = cf?.getString("custom-domain"),
+                    fileName = cf?.getString("file-name"),
                     compatibilityDate = cf?.getString("compatibility-date"),
                 )
             },

@@ -68,6 +68,7 @@
 | Cloudflare の API トークン | `resource-pack-host.cloudflare.api-token` | 空(空なら環境変数 `BETTERMODEL_CLOUDFLARE_API_TOKEN`。ログには出さない)。権限はアカウントの Workers Scripts Write と、ゾーン kaiware.games の Workers Routes Write | 本番に未導入 |
 | 専用 Worker の名前 | `resource-pack-host.cloudflare.worker-name` | `bettermodel-pack`(無ければ最初のアップロードで作る。他のリソースパックの Worker とは別) | 本番に未導入 |
 | カスタムドメイン | `resource-pack-host.cloudflare.custom-domain` | `bettermodel.minecraft.kaiware.games`(必須。workers.dev は使わず、Worker の workers.dev と preview の URL はアップロードのたびに無効にする。空にすると何もアップロードせず警告して配らない。ゾーン kaiware.games が API トークンと同じアカウントにある必要がある。`resource.minecraft.kaiware.games`(別のリソースパックを配る Worker)は設定してもアップロードしない。別の Worker や DNS レコードが既にあるホスト名は上書きせず警告して止まる) | 本番に未導入 |
+| 置くファイルの名前 | `resource-pack-host.cloudflare.file-name` | `BetterModel-ResourcePack.zip`(この名前が URL のファイル名になる。開発機と本番で別の名前にする。英数字・`-`・`_`・`.` だけで `.zip` で終わる名前。不正な名前なら何もアップロードせず警告して配らない。自分の名前のファイルだけを差し替え、同じ Worker の他の名前のファイルは残す) | 本番に未導入 |
 | Worker の compatibility_date | `resource-pack-host.cloudflare.compatibility-date` | `2025-09-01` | 本番に未導入 |
 | 配る待ち受けのアドレス | `resource-pack-host.bind-address` | `0.0.0.0` | 本番に未導入 |
 | 配る待ち受けのポート | `resource-pack-host.port` | `8163`(ゲームのポートとは別に、外から届くように開ける) | 本番に未導入 |
@@ -90,7 +91,7 @@
 
 配るパックについて(運営向けの情報):
 
-- **既定(cloudflare)の動き**: パックを作り終えた時(起動時と `bettermodel reload`)に、プラグイン自身が Cloudflare の API を直接呼んで、BetterModel 専用の Worker(Static Assets だけ)へ ZIP をアップロードする。Linux 本番でも、jar と config(または環境変数のアカウント ID・API トークン)だけで動き、node・wrangler・外部コマンドは要らない。置くファイルは `/bettermodel-<SHA-1 の先頭12桁>.zip` の1つだけで、アップロードのたびに Worker の中身が入れ替わる。**他のリソースパックの Worker には触らない**(Static Assets は送ったファイルの一覧で版が丸ごと置き換わるため、同じ Worker に置かない)。アップロードのあと、カスタムドメインからパックを取れるか確かめる。**新しくカスタムドメインを付けた直後は、Cloudflare が証明書を発行し終えるまで接続に失敗する**ので、15秒おきに最大3分ほど自動で再試行する(待っている間もサーバーは止まらず、コンソールに1回だけ知らせる)。接続の失敗・404・5xx は待ち、パックの中身が食い違う等の待っても直らない失敗は待たずに警告する。3分たっても取れなければ警告して配らず、時間を置いて `bettermodel reload` する。
+- **既定(cloudflare)の動き**: パックを作り終えた時(起動時と `bettermodel reload`)に、プラグイン自身が Cloudflare の API を直接呼んで、BetterModel 専用の Worker(Static Assets だけ)へ ZIP をアップロードする。Linux 本番でも、jar と config(または環境変数のアカウント ID・API トークン)だけで動き、node・wrangler・外部コマンドは要らない。置くファイルは `resource-pack-host.cloudflare.file-name` の名前(既定 `BetterModel-ResourcePack.zip`)で、URL は `https://<カスタムドメイン>/<file-name>` になる。開発機と本番サーバーは同じ Worker・同じカスタムドメインを使うので、`file-name` を別の名前(例: 開発機は `BetterModel-ResourcePack-dev.zip`)にして、別々のパックにする。アップロードでは自分の `file-name` のファイルだけを差し替え、同じ Worker にある他の名前のファイルは残す(Static Assets は送ったマニフェストに載ったものだけが新しい版に残るため、Worker に目録 `/bettermodel-files.json` を一緒に置き、アップロードの前に読んで他の行を引き継ぐ。他のファイルを取得できない時は、他のパックを消さないようアップロードを中止して警告する。同時に別の機械が上げて行が落ちたら、1回だけ戻す)。**他のリソースパックの Worker には触らない**(Static Assets は送ったファイルの一覧で版が丸ごと置き換わるため、同じ Worker に置かない)。アップロードのあと、カスタムドメインからパックを取れるか確かめる。**新しくカスタムドメインを付けた直後は、Cloudflare が証明書を発行し終えるまで接続に失敗する**ので、15秒おきに最大3分ほど自動で再試行する(待っている間もサーバーは止まらず、コンソールに1回だけ知らせる)。接続の失敗・404・5xx は待ち、パックの中身が食い違う等の待っても直らない失敗は待たずに警告する。3分たっても取れなければ警告して配らず、時間を置いて `bettermodel reload` する。
 - 前回アップロードした SHA-1 と URL は `plugins/BetterModel/.cache/cloudflare-pack.properties` に保存し、中身が同じなら API を呼ばない。アップロードは裏の仮想スレッドで行い、終わった時点で参加済みのプレイヤーにも適用の確認を送る。25 MiB を超えるパックは送らず警告する。
 - アップロードに失敗しても self-host へ自動では切り替えない。警告を出し、新しいパックは配らない(前回の URL と中身が同じ時だけ、前回の URL を使う)。アカウント ID・トークンが無い時は、足りないものと設定の場所を1回だけ警告して配らない。
 
