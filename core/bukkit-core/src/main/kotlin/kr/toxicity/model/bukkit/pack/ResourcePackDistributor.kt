@@ -289,7 +289,7 @@ object ResourcePackDistributor {
     /** プレイヤーへパックを送る。統合版のプレイヤーは飛ばす。そのプレイヤーのスレッドで呼ぶこと。 */
     private fun send(player: Player, offer: PackOfferTracker.Offer) {
         if (!player.isOnline || player.uniqueId.isBedrockPlayer()) return
-        // ハッシュはクライアントへ渡さない（null。Paper は空のハッシュとして送り、クライアントは検証しない）
+        // ハッシュはクライアントへ渡さない（null。Paper の API で hash は @Nullable で、ハッシュ無しで送る）
         player.addResourcePack(ResourcePackHostConfig.PACK_ID, offer.url, null as ByteArray?, prompt, required)
     }
 }
