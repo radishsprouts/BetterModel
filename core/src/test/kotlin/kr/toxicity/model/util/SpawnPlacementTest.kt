@@ -120,6 +120,36 @@ class SpawnPlacementTest {
         assertNull(findSpawnPosition(10.5, 64.0, 10.5, 0.6, 1.8, false, floorWorld(*cells)))
     }
 
+    /** 開けた草地: y=93 が固い地面で、その上（草・花は通れるので固体に数えない）は空気。 */
+    private fun openField(): (Double, Double, Double, Double, Double, Double) -> Boolean = { minX, minY, minZ, maxX, maxY, maxZ ->
+        var hit = false
+        for (bx in floor(minX).toInt()..floor(maxX).toInt()) for (by in floor(minY).toInt()..floor(maxY).toInt()) for (bz in floor(minZ).toInt()..floor(maxZ).toInt()) {
+            if (by <= 93) hit = true
+        }
+        hit
+    }
+
+    @Test
+    fun `開けた草地ではずらさず元の位置を返す`() {
+        // 実機で報告された座標（負の x を含む）。周りが空気で足元が固い場所は、そのまま出す。
+        val pos = findSpawnPosition(-41.5, 94.0, 39.5, 0.6, 1.95, false, openField())
+        assertEquals(SpawnPosition(-41.5, 94.0, 39.5), pos)
+        assertFalse(pos!!.movedFrom(-41.5, 94.0, 39.5))
+    }
+
+    @Test
+    fun `原点でも開けていればずらさない`() {
+        val pos = findSpawnPosition(0.5, 94.0, 0.5, 0.6, 1.8, false, openField())
+        assertEquals(SpawnPosition(0.5, 94.0, 0.5), pos)
+        assertEquals(SpawnPosition(-0.5, 94.0, -0.5), findSpawnPosition(-0.5, 94.0, -0.5, 0.6, 1.8, false, openField()))
+    }
+
+    @Test
+    fun `空中に出す飛ぶ種類も開けていればずらさない`() {
+        val pos = findSpawnPosition(-41.5, 100.0, 39.5, 0.5, 0.9, true, openField())
+        assertEquals(SpawnPosition(-41.5, 100.0, 39.5), pos)
+    }
+
     @Test
     fun `ピースフルでは敵対モブだけ止める`() {
         assertTrue(refusesInPeaceful(peaceful = true, hostile = true))

@@ -25,13 +25,17 @@ fun CommandManager<Audience>.register(
     build()
 }
 
-inline fun CommandContext<*>.limb(key: String, notFound: (String) -> ModelRenderer) = optional<String>(key).flatMap {
-    BetterModel.limb(it)
-}.orElse(null) ?: notFound(key)
+/** 見つからない時、[notFound] へは入力された名前（入力が無ければ [key]）を渡す。 */
+inline fun CommandContext<*>.limb(key: String, notFound: (String) -> ModelRenderer): ModelRenderer {
+    val input = optional<String>(key).orElse(null)
+    return input?.let { BetterModel.limb(it).orElse(null) } ?: notFound(input ?: key)
+}
 
-inline fun CommandContext<*>.model(key: String, notFound: (String) -> ModelRenderer) = optional<String>(key).flatMap {
-    BetterModel.model(it)
-}.orElse(null) ?: notFound(key)
+/** 見つからない時、[notFound] へは入力された名前（入力が無ければ [key]）を渡す。 */
+inline fun CommandContext<*>.model(key: String, notFound: (String) -> ModelRenderer): ModelRenderer {
+    val input = optional<String>(key).orElse(null)
+    return input?.let { BetterModel.model(it).orElse(null) } ?: notFound(input ?: key)
+}
 
 inline fun <T> CommandContext<*>.string(key: String, mapper: (String) -> T) = mapper(get(key))
 
