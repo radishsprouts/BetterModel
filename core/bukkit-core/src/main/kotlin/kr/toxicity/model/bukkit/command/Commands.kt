@@ -15,6 +15,7 @@ import kr.toxicity.model.api.tracker.EntityHideOption
 import kr.toxicity.model.api.tracker.ModelScaler
 import kr.toxicity.model.api.tracker.Tracker
 import kr.toxicity.model.api.tracker.TrackerModifier
+import kr.toxicity.model.api.bukkit.BetterModelBukkit
 import kr.toxicity.model.bukkit.audience.AudiencePlayer
 import kr.toxicity.model.bukkit.audience.AudienceSender
 import kr.toxicity.model.bukkit.audience.BukkitAudience
@@ -292,9 +293,10 @@ private fun World.overlapsBlocks(minX: Double, minY: Double, minZ: Double, maxX:
     val box = BoundingBox(minX, minY, minZ, maxX, maxY, maxZ)
     for (bx in floor(minX).toInt()..floor(maxX).toInt()) for (bz in floor(minZ).toInt()..floor(maxZ).toInt()) {
         if (!isChunkLoaded(bx shr 4, bz shr 4)) return true
+        // 所有の判定はチャンク単位（ブロック座標を渡さない）。Folia 以外にはこの API が無い。
+        if (BetterModelBukkit.IS_FOLIA && !Bukkit.isOwnedByCurrentRegion(this, bx shr 4, bz shr 4)) return true
         for (by in floor(minY).toInt()..floor(maxY).toInt()) {
             if (by < minHeight || by >= maxHeight) continue
-            if (!Bukkit.isOwnedByCurrentRegion(this, bx, by, bz)) return true
             val block = getBlockAt(bx, by, bz)
             if (block.isPassable) continue
             if (block.collisionShape.boundingBoxes.any { it.clone().shift(bx.toDouble(), by.toDouble(), bz.toDouble()).overlaps(box) }) return true
