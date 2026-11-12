@@ -26,10 +26,19 @@ import kr.toxicity.model.command.*
 import kr.toxicity.model.util.*
 import net.kyori.adventure.audience.Audience
 import net.kyori.adventure.text.format.NamedTextColor.*
+import org.bukkit.Bukkit
+import org.bukkit.Difficulty
+import org.bukkit.Location
+import org.bukkit.World
 import org.bukkit.command.CommandSender
+import org.bukkit.entity.Enemy
 import org.bukkit.entity.EntityType
 import org.bukkit.entity.Player
+import org.bukkit.util.BoundingBox
 import org.bukkit.util.Vector
+import java.util.Locale
+import kotlin.math.floor
+import kotlin.math.max
 import org.incendo.cloud.SenderMapper
 import org.incendo.cloud.bukkit.BukkitCommandMeta
 import org.incendo.cloud.bukkit.CloudBukkitCapabilities
@@ -208,19 +217,90 @@ private fun undisguise(context: CommandContext<AudiencePlayer>) {
 private fun spawn(context: CommandContext<AudiencePlayer>) {
     val audience = context.sender()
     val player = audience.sender
-    val model = context.model("model") { return audience.warn("Unable to find this model: $it") }
+    val model = context.model("model") { return audience.warn("モデル $it が見つかりません。名前を確かめてください（入力中に出る候補から選べます）") }
+    val modelName = context.get<String>("model")
     val type = context.nullable("type", EntityType.HUSK)
     val scale = context.nullable("scale", 1.0)
     val loc = context.nullable("location") { player.location }.clone().apply {
         if (world == null) world = player.world
     }
-    // 指定座標は送信者と別のリージョンにある場合がある（Folia）。そのリージョンのスレッドで spawn とモデル作成を行う。
-    loc.wrap().task {
-        val entity = loc.world.spawnEntity(loc, type)
-        if (entity.isValid) {
-            model.create(entity.wrap(), TrackerModifier.DEFAULT) { tracker -> tracker.scaler(ModelScaler.entity().multiply(scale.toFloat())) }
-        } else audience.warn("Entity spawning has been blocked.")
+    val world = loc.world
+    val typeName = type.name.lowercase()
+    // ピースフルではバニラが敵対モブを次の tick に DESPAWN で消すので、出す前に止める。
+    if (refusesInPeaceful(world.difficulty == Difficulty.PEACEFUL, isHostileClass(type.entityClass, Enemy::class.java))) {
+        return audience.warn("${world.name} は難易度がピースフルなので、敵対モブの $typeName は出せません。難易度を上げるか、敵対しない type を指定してください（例: /bm spawn $modelName villager）")
     }
+    // 指定座標は送信者と別のリージョンにある場合がある（Folia）。そのリージョンのスレッドで探索・spawn・モデル作成を行う。
+    loc.wrap().task {
+        val position = if (world.isChunkLoaded(loc.blockX shr 4, loc.blockZ shr 4)) {
+            val size = type.spawnSize(world, loc)
+            findSpawnPosition(
+                loc.x, loc.y, loc.z, size.first, size.second, type.isFlying()
+            ) { minX, minY, minZ, maxX, maxY, maxZ -> world.overlapsBlocks(minX, minY, minZ, maxX, maxY, maxZ) }
+        } else SpawnPosition(loc.x, loc.y, loc.z) // 読み込まれていない場所は同期で読み込まず、指定位置のまま出す
+        if (position == null) {
+            return@task audience.warn("${loc.x.pos()}, ${loc.y.pos()}, ${loc.z.pos()} の周りに、モブが埋まらずに立てる場所がありません。出していません。開けた場所の座標を指定してください")
+        }
+        val spawnLoc = Location(world, position.x, position.y, position.z, loc.yaw, loc.pitch)
+        val entity = try {
+            world.spawnEntity(spawnLoc, type)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+        if (entity == null || !entity.isValid) {
+            return@task audience.warn("$typeName を出せませんでした。保護区域やモブの出現を制限するプラグインに止められた可能性があります")
+        }
+        model.create(entity.wrap(), TrackerModifier.DEFAULT) { tracker -> tracker.scaler(ModelScaler.entity().multiply(scale.toFloat())) }
+        val moved = position.movedFrom(loc.x, loc.y, loc.z)
+        val gone = { audience.warn("$typeName を出しましたが、すぐにサーバーか別のプラグインに消されました。モデルも一緒に消えています") }
+        // 1 tick 後にまだ生きているか見直す。エンティティのスケジューラが retired を返した時は、既に消えている。
+        entity.wrap().taskLater(
+            1,
+            {
+                if (entity.isValid) {
+                    audience.info(
+                        "$typeName にモデル $modelName を付けて出しました（${world.name} の ${position.x.pos()}, ${position.y.pos()}, ${position.z.pos()}）" +
+                            if (moved) "。指定の位置では埋まるため、近くの空いた場所へずらしました" else ""
+                    )
+                } else gone()
+            },
+            gone
+        )
+    }
+}
+
+private fun Double.pos() = String.format(Locale.ROOT, "%.1f", this)
+
+private val FLYING_TYPES = setOf("BAT", "BLAZE", "VEX", "ALLAY", "BEE", "PARROT", "GHAST", "HAPPY_GHAST", "PHANTOM", "ENDER_DRAGON", "WITHER")
+
+/** 床が無くても出してよい（飛ぶ）種類か。 */
+private fun EntityType.isFlying() = name in FLYING_TYPES
+
+/** 出す前の種類の当たり判定（幅, 高さ）。世界に追加しないエンティティを作って測り、作れなければ人型の大きさにする。 */
+private fun EntityType.spawnSize(world: World, loc: Location): Pair<Double, Double> = try {
+    val box = world.createEntity(loc, entityClass ?: error("no class")).boundingBox
+    max(box.widthX, box.widthZ) to box.height
+} catch (_: Exception) {
+    0.6 to 1.8
+}
+
+/**
+ * 箱がブロックの当たり判定と重なるか。読み込まれていないチャンクや、今のリージョンが持たない場所に触れる箱は、
+ * 同期で読み込んだり別リージョンへ触ったりせず「重なる（使えない）」として返す。
+ */
+private fun World.overlapsBlocks(minX: Double, minY: Double, minZ: Double, maxX: Double, maxY: Double, maxZ: Double): Boolean {
+    val box = BoundingBox(minX, minY, minZ, maxX, maxY, maxZ)
+    for (bx in floor(minX).toInt()..floor(maxX).toInt()) for (bz in floor(minZ).toInt()..floor(maxZ).toInt()) {
+        if (!isChunkLoaded(bx shr 4, bz shr 4)) return true
+        for (by in floor(minY).toInt()..floor(maxY).toInt()) {
+            if (by < minHeight || by >= maxHeight) continue
+            if (!Bukkit.isOwnedByCurrentRegion(this, bx, by, bz)) return true
+            val block = getBlockAt(bx, by, bz)
+            if (block.isPassable) continue
+            if (block.collisionShape.boundingBoxes.any { it.clone().shift(bx.toDouble(), by.toDouble(), bz.toDouble()).overlaps(box) }) return true
+        }
+    }
+    return false
 }
 
 private fun version(context: CommandContext<Audience>) {
