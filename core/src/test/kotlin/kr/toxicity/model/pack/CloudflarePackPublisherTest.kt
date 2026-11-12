@@ -73,15 +73,14 @@ class CloudflarePackPublisherTest {
     private fun defaultResponse(call: Call): Pair<Int, String> = when {
         call.path.endsWith("/assets-upload-session") -> ok("""{"jwt":"upload-jwt","buckets":[["h"]]}""")
         call.path.endsWith("/workers/assets/upload") -> 201 to """{"success":true,"errors":[],"result":{"jwt":"completion-jwt"}}"""
-        call.path.endsWith("/workers/subdomain") -> ok("""{"subdomain":"kado"}""")
-        call.path.endsWith("/subdomain") -> ok("""{"enabled":true}""")
-        call.path.endsWith("/workers/domains") -> ok("""{"hostname":"pack.example.com"}""")
+        call.path.endsWith("/subdomain") -> ok("""{"enabled":false}""")
+        call.path.endsWith("/workers/domains") -> ok("""{"hostname":"bettermodel.minecraft.kaiware.games"}""")
         else -> ok("{}")
     }
 
     private fun config(
         token: String = "secret-token",
-        domain: String = "",
+        domain: String = DOMAIN,
         env: (String) -> String? = { null },
     ) = CloudflarePackConfig.of("acc123", token, "bettermodel-pack", domain, null, env)
 
@@ -93,21 +92,25 @@ class CloudflarePackPublisherTest {
 
     private fun bundle(seed: Int = 1, size: Int = 5_000) = PackBundle(ByteArray(size) { (it * seed).toByte() })
 
+    private companion object {
+        const val DOMAIN = "bettermodel.minecraft.kaiware.games"
+    }
+
     private fun pathsOf() = calls.map { "${it.method} ${it.path}" }
 
     @Test
-    fun `成功したら API を決まった順に呼び、workers dev の URL を返す`() {
+    fun `成功したら API を決まった順に呼び、カスタムドメインの URL を返す`() {
         val b = bundle()
         val result = publisher().publish(b)
         val published = assertIs<PublishResult.Published>(result)
-        assertEquals("https://bettermodel-pack.kado.workers.dev/bettermodel-${b.sha1Hex.take(12)}.zip", published.url)
+        assertEquals("https://$DOMAIN/bettermodel-${b.sha1Hex.take(12)}.zip", published.url)
         assertFalse(published.reused)
         assertEquals(
             listOf(
                 "POST /client/v4/accounts/acc123/workers/scripts/bettermodel-pack/assets-upload-session",
                 "POST /client/v4/accounts/acc123/workers/assets/upload",
                 "PUT /client/v4/accounts/acc123/workers/scripts/bettermodel-pack",
-                "GET /client/v4/accounts/acc123/workers/subdomain",
+                "PUT /client/v4/accounts/acc123/workers/domains",
                 "POST /client/v4/accounts/acc123/workers/scripts/bettermodel-pack/subdomain",
             ),
             pathsOf(),
@@ -157,15 +160,68 @@ class CloudflarePackPublisherTest {
     }
 
     @Test
-    fun `カスタムドメインを指定したら、ドメインを付けてその URL を返す`() {
+    fun `カスタムドメインの指定は大文字・スキーム・末尾のスラッシュとドットを直して付ける`() {
         val b = bundle()
-        val result = assertIs<PublishResult.Published>(publisher(config(domain = "https://Pack.Example.com/")).publish(b))
+        val result = assertIs<PublishResult.Published>(publisher(config(domain = "https://Pack.Example.com./")).publish(b))
         assertEquals("https://pack.example.com/bettermodel-${b.sha1Hex.take(12)}.zip", result.url)
-        val domain = calls.last()
-        assertEquals("PUT /client/v4/accounts/acc123/workers/domains", "${domain.method} ${domain.path}")
+        val domain = calls.first { it.path.endsWith("/workers/domains") }
+        assertEquals("PUT", domain.method)
         assertTrue(domain.body.contains("\"hostname\":\"pack.example.com\""))
         assertTrue(domain.body.contains("\"service\":\"bettermodel-pack\""))
-        assertFalse(pathsOf().any { it.endsWith("/workers/subdomain") })
+    }
+
+    @Test
+    fun `custom-domain が空なら、何も呼ばずにエラーになる`() {
+        val failed = assertIs<PublishResult.Failed>(publisher(config(domain = "")).publish(bundle()))
+        assertTrue(failed.message.contains("cloudflare.custom-domain を設定してください"))
+        assertTrue(calls.isEmpty(), "アップロードも workers.dev の取得も呼ばない")
+        assertFalse(File(dir, ".cache/cloudflare-pack.properties").exists())
+        // 設定の検査にも出る（配布側が警告に使う）
+        assertTrue(config(domain = "").missing().single().contains("custom-domain"))
+        // キーが無い（null）時は既定のドメインを使う
+        assertEquals(DOMAIN, CloudflarePackConfig.of("a", "t", null, null, null) { null }.customDomain)
+    }
+
+    @Test
+    fun `file-server の resource minecraft kaiware games は、大文字・末尾のドットでもアップロードしない`() {
+        for (domain in listOf("resource.minecraft.kaiware.games", "Resource.Minecraft.Kaiware.Games.", "https://resource.minecraft.kaiware.games/")) {
+            val failed = assertIs<PublishResult.Failed>(publisher(config(domain = domain)).publish(bundle()))
+            assertTrue(failed.message.contains("resource.minecraft.kaiware.games"), domain)
+            assertTrue(config(domain = domain).missing().isNotEmpty(), domain)
+        }
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test
+    fun `workers dev のサブドメインを取得せず、script の公開 URL と preview を無効にする`() {
+        assertIs<PublishResult.Published>(publisher().publish(bundle()))
+        assertFalse(pathsOf().any { it.endsWith("/workers/subdomain") }, "GET /workers/subdomain は呼ばない")
+        assertTrue(calls.none { it.method == "GET" })
+        val disable = calls.single { it.path.endsWith("/workers/scripts/bettermodel-pack/subdomain") }
+        assertEquals("POST", disable.method)
+        assertTrue(disable.body.contains("\"enabled\":false"))
+        assertTrue(disable.body.contains("\"previews_enabled\":false"))
+        assertTrue(calls.indexOfFirst { it.path.endsWith("/workers/domains") } < calls.indexOf(disable), "ドメインを付けた後に無効にする")
+    }
+
+    @Test
+    fun `ドメインの付与で既存のものを上書きしない（override を送らない）`() {
+        assertIs<PublishResult.Published>(publisher().publish(bundle()))
+        val domain = calls.single { it.path.endsWith("/workers/domains") }
+        assertFalse(domain.body.contains("override"), domain.body)
+    }
+
+    @Test
+    fun `ホスト名が既に使われていて付与が断られたら、上書きせず警告して止まり、公開 URL も無効にする`() {
+        override = { call, _ ->
+            if (call.path.endsWith("/workers/domains")) 409 to """{"success":false,"errors":[{"code":100117,"message":"Hostname already has externally managed DNS records"}],"result":null}""" else null
+        }
+        val failed = assertIs<PublishResult.Failed>(publisher().publish(bundle()))
+        assertTrue(failed.message.contains("HTTP 409"))
+        assertTrue(failed.message.contains("上書きしません"))
+        assertEquals(1, calls.count { it.path.endsWith("/workers/domains") }, "再試行も上書きもしない")
+        assertTrue(calls.any { it.path.endsWith("/workers/scripts/bettermodel-pack/subdomain") && it.body.contains("\"enabled\":false") })
+        assertFalse(File(dir, ".cache/cloudflare-pack.properties").exists())
     }
 
     @Test
@@ -221,14 +277,6 @@ class CloudflarePackPublisherTest {
         val failed = assertIs<PublishResult.Failed>(publisher().publish(bundle(seed = 5)))
         assertTrue(failed.message.contains("HTTP 429"))
         assertEquals(3, calls.count { it.path.endsWith("/assets-upload-session") }, "最初の1回と再試行2回（delays の数）")
-    }
-
-    @Test
-    fun `サブドメインが無いアカウントは、案内つきで失敗する`() {
-        override = { call, _ -> if (call.path.endsWith("/workers/subdomain")) ok("""{"subdomain":null}""") else null }
-        val failed = assertIs<PublishResult.Failed>(publisher().publish(bundle()))
-        assertTrue(failed.message.contains("custom-domain"))
-        assertFalse(File(dir, ".cache/cloudflare-pack.properties").exists())
     }
 
     @Test

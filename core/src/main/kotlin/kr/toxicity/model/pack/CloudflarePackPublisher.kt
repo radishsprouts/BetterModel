@@ -31,7 +31,7 @@ import java.util.UUID
  * @property accountId アカウント ID
  * @property apiToken API トークン（ログに出さない）
  * @property workerName BetterModel 専用の Worker の名前
- * @property customDomain 付けるカスタムドメイン。空なら workers.dev の URL を使う
+ * @property customDomain 付けるカスタムドメイン（必須。workers.dev は使わない）。空と [FORBIDDEN_DOMAIN] は配布できない
  * @property compatibilityDate Worker の compatibility_date
  */
 data class CloudflarePackConfig(
@@ -45,6 +45,16 @@ data class CloudflarePackConfig(
     fun missing(): List<String> = buildList {
         if (accountId.isEmpty()) add("account-id（または環境変数 $ENV_ACCOUNT_ID）")
         if (apiToken.isEmpty()) add("api-token（または環境変数 $ENV_API_TOKEN）")
+        domainProblem()?.let(::add)
+    }
+
+    /** custom-domain の問題の説明。問題が無ければ null。 */
+    fun domainProblem(): String? = when {
+        customDomain.isEmpty() ->
+            "custom-domain（BetterModel 専用のカスタムドメイン。workers.dev は使いません。例: $DEFAULT_CUSTOM_DOMAIN）"
+        customDomain == FORBIDDEN_DOMAIN ->
+            "custom-domain（$FORBIDDEN_DOMAIN は別のリソースパックを配る Worker のホスト名のため使えません。$DEFAULT_CUSTOM_DOMAIN のような別のホスト名にしてください）"
+        else -> null
     }
 
     override fun toString() = "CloudflarePackConfig(accountId=$accountId, workerName=$workerName, customDomain=$customDomain)"
@@ -54,6 +64,12 @@ data class CloudflarePackConfig(
         const val ENV_ACCOUNT_ID = "BETTERMODEL_CLOUDFLARE_ACCOUNT_ID"
         const val DEFAULT_WORKER_NAME = "bettermodel-pack"
         const val DEFAULT_COMPATIBILITY_DATE = "2025-09-01"
+
+        /** custom-domain の既定（キーが無い時）。config.yml の既定値と同じ。 */
+        const val DEFAULT_CUSTOM_DOMAIN = "bettermodel.minecraft.kaiware.games"
+
+        /** 他のリソースパックを配っている Worker（file-server）のホスト名。奪わないよう、使わせない。 */
+        const val FORBIDDEN_DOMAIN = "resource.minecraft.kaiware.games"
 
         /** 節が無い時の既定値。環境変数があれば読む。 */
         val DEFAULT get() = of(null, null, null, null, null)
@@ -75,7 +91,9 @@ data class CloudflarePackConfig(
             apiToken = apiToken?.trim().orEmpty().ifEmpty { env(ENV_API_TOKEN)?.trim().orEmpty() },
             workerName = workerName?.trim()?.lowercase()?.replace(Regex("[^a-z0-9-]"), "-")?.take(63)?.trim('-')
                 ?.takeIf(String::isNotEmpty) ?: DEFAULT_WORKER_NAME,
-            customDomain = customDomain?.trim()?.lowercase()?.removePrefix("https://")?.removePrefix("http://")?.trimEnd('/').orEmpty(),
+            // null（キー無し）は既定のドメイン。空文字は「未設定」として配布を止める
+            customDomain = (customDomain ?: DEFAULT_CUSTOM_DOMAIN).trim().lowercase()
+                .removePrefix("https://").removePrefix("http://").trimEnd('/').trimEnd('.'),
             compatibilityDate = compatibilityDate?.trim()?.takeIf(String::isNotEmpty) ?: DEFAULT_COMPATIBILITY_DATE,
         )
     }
@@ -99,7 +117,8 @@ sealed interface PublishResult {
  * 外部のプロセス（node・wrangler 等）は使わず、JDK の [HttpClient] だけで Cloudflare API を呼ぶ。
  * 手順は Workers Static Assets の direct upload のとおり
  * （マニフェストの登録 → ファイルのアップロード → completion token で Worker を PUT）。
- * そのあと workers.dev の有効化（またはカスタムドメインの付与）を行う。Worker が無ければ PUT で作られる。
+ * そのあとカスタムドメインを付け、workers.dev と preview の URL を無効にする（workers.dev は使わない）。
+ * Worker が無ければ PUT で作られる。カスタムドメインは必須で、他の Worker のホスト名や既存の DNS レコードは上書きしない。
  *
  * 置くファイルは `/bettermodel-<SHA-1 の先頭12桁>.zip` の1つだけで、デプロイのたびに版ごと置き換わる
  * （古いパックが残らず、URL とハッシュの食い違いも起きない）。
@@ -134,6 +153,9 @@ class CloudflarePackPublisher(
      */
     @Synchronized
     fun publish(bundle: PackBundle): PublishResult {
+        config.domainProblem()?.let {
+            return PublishResult.Failed("cloudflare.custom-domain を設定してください。何もアップロードしません。詳細: $it")
+        }
         if (bundle.bytes.size > MAX_ASSET_BYTES) {
             return PublishResult.Failed(
                 "パックの大きさ（${bundle.bytes.size} バイト）が Cloudflare の 1 ファイルの上限 $MAX_ASSET_BYTES バイト（25 MiB）を超えているため、アップロードしません。"
@@ -226,41 +248,46 @@ class CloudflarePackPublisher(
         return expose(account, fileName)
     }
 
-    /** workers.dev の有効化、またはカスタムドメインの付与をして、ファイルの URL を返す。 */
+    /** カスタムドメインを付け、workers.dev を無効にして、ファイルの URL を返す（workers.dev の URL は返さない）。 */
     private fun expose(account: String, fileName: String): String {
-        if (config.customDomain.isNotEmpty()) {
-            val body = JsonObject().apply {
-                addProperty("hostname", config.customDomain)
-                addProperty("service", config.workerName)
-            }
+        // override_existing_origin / override_existing_dns_record は渡さない（既存のものを上書きさせない）
+        val body = JsonObject().apply {
+            addProperty("hostname", config.customDomain)
+            addProperty("service", config.workerName)
+        }
+        try {
             call("カスタムドメインの付与") {
                 request("$account/workers/domains", config.apiToken)
                     .header("Content-Type", "application/json")
                     .PUT(HttpRequest.BodyPublishers.ofString(body.toString()))
                     .build()
             }
-            return "https://${config.customDomain}/$fileName"
-        }
-        val subdomain = call("workers.dev のサブドメインの取得") {
-            request("$account/workers/subdomain", config.apiToken).GET().build()
-        }.getAsJsonObject("result")?.get("subdomain")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
-        if (subdomain.isEmpty()) {
+        } catch (e: ApiException) {
+            // 付けられなかった時に、新しい Worker の URL が公開されたままにならないよう、無効化を試みる
+            val closed = runCatching { disableWorkersDev(account) }.isSuccess
             throw ApiException(
-                "このアカウントには workers.dev のサブドメインがありません。Cloudflare のダッシュボードの Workers & Pages で登録するか、cloudflare.custom-domain を設定してください。",
+                "${e.message}（${config.customDomain} が別の Worker に付いているか、同じ名前の DNS レコードが既にある場合、BetterModel は上書きしません。" +
+                    "別のホスト名を cloudflare.custom-domain に設定してください）" +
+                    if (closed) "" else "（Worker の公開 URL の無効化にも失敗しました。Cloudflare のダッシュボードで確認してください）",
                 false,
             )
         }
+        disableWorkersDev(account)
+        return "https://${config.customDomain}/$fileName"
+    }
+
+    /** Worker の公開 URL と preview の URL を無効にする（Cloudflare は新しい Worker で既定で有効にすることがある）。 */
+    private fun disableWorkersDev(account: String) {
         val body = JsonObject().apply {
-            addProperty("enabled", true)
+            addProperty("enabled", false)
             addProperty("previews_enabled", false)
         }
-        call("workers.dev の有効化") {
+        call("Worker の公開 URL（workers.dev）の無効化") {
             request("$account/workers/scripts/${config.workerName}/subdomain", config.apiToken)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                 .build()
         }
-        return "https://${config.workerName}.$subdomain.workers.dev/$fileName"
     }
 
     private fun request(url: String, token: String) = HttpRequest.newBuilder(URI.create(url))
