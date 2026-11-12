@@ -156,6 +156,13 @@ resource-pack-host:
     #   入れると、他のパックを配っている Worker からホスト名を奪うおそれがあるため、設定してもアップロードしません。
     # - すでに別の Worker が使っているホスト名や、DNS レコードがあるホスト名は上書きせず、警告を出して止まります。
     custom-domain: bettermodel.minecraft.kaiware.games
+    # アップロードするパックのファイル名。この名前がそのまま URL のファイル名になります（https://<custom-domain>/<file-name>）。
+    # 開発機と本番サーバーは同じ Worker・同じカスタムドメインを使うので、別の名前にしてください。
+    # 例: 本番は BetterModel-ResourcePack.zip（既定）、開発機は BetterModel-ResourcePack-dev.zip
+    # 自分の名前のファイルだけを差し替え、同じ Worker にある他の名前のファイルは残します。
+    # 使える文字は英数字・-・_・. だけで、.zip で終わる名前にします（/ や .. は使えません）。
+    # 不正な名前の時は、何もアップロードせず警告を出して、パックを配りません。
+    file-name: BetterModel-ResourcePack.zip
     # Worker の compatibility_date。
     compatibility-date: "2025-09-01"
   # self-host で待ち受けるアドレスとポート。ポートが使えない時は、エラーを出して配布だけを止めます。
