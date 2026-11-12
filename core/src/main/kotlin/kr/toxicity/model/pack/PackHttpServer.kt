@@ -20,7 +20,7 @@ import java.util.concurrent.Semaphore
  * @property bytes ZIP のバイト列
  */
 class PackBundle(val bytes: ByteArray) {
-    /** SHA-1（クライアントへ渡すハッシュ）。 */
+    /** SHA-1（中身の識別・ETag・アップロード先のファイル名用。クライアントへは渡さない）。 */
     val sha1: ByteArray = MessageDigest.getInstance("SHA-1").digest(bytes)
 
     /** SHA-1 の16進文字列。 */

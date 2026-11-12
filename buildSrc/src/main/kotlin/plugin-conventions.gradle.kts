@@ -52,5 +52,6 @@ tasks {
         prefix("org.incendo.cloud")
         prefix("org.bstats")
         prefix("net.byteflux.libby")
+        prefix("org.apache.commons.codec")
     }
 }

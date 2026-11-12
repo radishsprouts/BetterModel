@@ -12,6 +12,9 @@ dependencies {
 
     compileOnly(libs.bundles.core)
     compileOnly(libs.cloud.core)
+    // 実行時は bukkit-core が shade して relocate する
+    compileOnly(libs.commons.codec)
+    testImplementation(libs.commons.codec)
 
     testImplementation(libs.bundles.minecraft)
     testImplementation(libs.netty.buffer)

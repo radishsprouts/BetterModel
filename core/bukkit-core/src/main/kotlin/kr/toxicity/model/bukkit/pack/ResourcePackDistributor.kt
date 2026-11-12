@@ -26,12 +26,22 @@ import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerJoinEvent
+import java.io.File
+import java.net.http.HttpClient
+import java.time.Duration
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * BetterModel が作ったリソースパックを、Java 版のプレイヤーへ配る。
  *
- * - self-host: [PackHttpServer] で ZIP を配り、その URL と SHA-1 をクライアントへ渡す
- * - url: 別の場所に置かれた ZIP の URL を渡す。SHA-1 はその URL の実物を非同期で取って計算し、取れるまではハッシュ無しで送る
+ * - cloudflare（既定）: [CloudflarePackPublisher] が BetterModel 専用の Cloudflare Worker へ ZIP をアップロードし、その URL を渡す。
+ *   アップロードは仮想スレッドで1本ずつ行い、終わった時点で参加済みのプレイヤーにも送る。失敗しても self-host へは切り替えない
+ * - self-host: [PackHttpServer] で ZIP を配り、その URL を渡す
+ * - url: 別の場所に置かれた ZIP の URL を渡す。中身の変更を検知するため、その URL の実物を非同期で取って SHA-1 を計算する（サーバー内だけで使う）
+ *
+ * **ハッシュはどのモードでもクライアントへ渡さない**（社長指示。ハッシュの食い違いによるトラブルを避けるため）。SHA-1 は、
+ * 同じパックを送り直さないための判定と、サーバー側の確認にだけ使う。
  *
  * 参加時に送り、リロードでパックの中身が変わった時だけ接続中のプレイヤーへ送り直す。
  * 統合版（Floodgate）のプレイヤーには送らない。Folia では、プレイヤーの操作を必ずそのプレイヤーのスケジューラで行う。
@@ -46,6 +56,10 @@ object ResourcePackDistributor {
     private var generation = 0L
     private var warnedLoopback = false
     private var warnedHash = false
+    private var warnedMissing = false
+    private var publisher: CloudflarePackPublisher? = null
+    private var publisherConfig: CloudflarePackConfig? = null
+    private var uploader: ExecutorService? = null
 
     @Volatile
     private var prompt: String? = null
@@ -73,6 +87,7 @@ object ResourcePackDistributor {
         generation++
         stopServer()
         closeHasher()
+        closeCloudflare()
         tracker.update(null)
     }
 
@@ -91,9 +106,76 @@ object ResourcePackDistributor {
             return disable("pack-type が none のため、リソースパックを配りません。")
         }
         when (config.mode) {
+            ResourcePackHostConfig.Mode.CLOUDFLARE -> cloudflare(config, pack)
             ResourcePackHostConfig.Mode.SELF_HOST -> selfHost(config, pack)
             ResourcePackHostConfig.Mode.URL -> urlMode(config)
         }
+    }
+
+    private fun cloudflare(config: ResourcePackHostConfig, pack: PackResult) {
+        stopServer()
+        closeHasher()
+        val cf = config.cloudflare
+        val missing = cf.missing()
+        if (missing.isNotEmpty()) {
+            if (!warnedMissing) {
+                warnedMissing = true
+                warn(
+                    "リソースパックを配れません。config.yml の resource-pack-host.cloudflare に ${missing.joinToString("、")} を設定してください。".toComponent(NamedTextColor.RED)
+                )
+            }
+            return disable(null)
+        }
+        warnedMissing = false
+        val bundle = runCatching { bundleOf(pack) }.getOrElse {
+            return disable("リソースパックの ZIP を読めないため、配りません: ${it.message}", error = true)
+        }
+        val mine = generation
+        val target = ensurePublisher(cf)
+        // 通信はメインスレッド・リージョンのスレッドで行わず、1本ずつ仮想スレッドで行う（アップロードが重ならない）
+        ensureUploader().execute {
+            val result = runCatching { target.publish(bundle) }.getOrElse {
+                PublishResult.Failed("予期しないエラー: ${it.message}")
+            }
+            synchronized(this) {
+                if (mine != generation) return@execute
+                when (result) {
+                    is PublishResult.Published -> publish(PackOfferTracker.Offer(result.url, bundle.sha1))
+                    // 配布先を自宅へ切り替えない。前回配った内容のまま残し、警告だけ出す
+                    is PublishResult.Failed -> warn("リソースパックを Cloudflare へ置けなかったため、新しいパックは配りません: ${result.message}".toComponent(NamedTextColor.RED))
+                }
+            }
+        }
+    }
+
+    private fun ensurePublisher(config: CloudflarePackConfig): CloudflarePackPublisher {
+        publisher?.takeIf { publisherConfig == config }?.let { return it }
+        publisher?.close()
+        val client = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .connectTimeout(Duration.ofSeconds(10))
+            .build()
+        val created = CloudflarePackPublisher(
+            config = config,
+            stateFile = File(File(PLATFORM.dataFolder(), ".cache"), "cloudflare-pack.properties"),
+            verifier = CloudflarePackPublisher.downloadVerifier(client),
+            client = client,
+        )
+        publisher = created
+        publisherConfig = config
+        return created
+    }
+
+    private fun ensureUploader(): ExecutorService = uploader ?: Executors.newSingleThreadExecutor(
+        Thread.ofVirtual().name("bettermodel-pack-upload").factory()
+    ).also { uploader = it }
+
+    private fun closeCloudflare() {
+        uploader?.shutdownNow()
+        uploader = null
+        publisher?.close()
+        publisher = null
+        publisherConfig = null
     }
 
     private fun selfHost(config: ResourcePackHostConfig, pack: PackResult) {
@@ -118,7 +200,7 @@ object ResourcePackDistributor {
         stopServer()
         val url = config.url
         // 同じ URL ならこれまでに取れたハッシュを引き継ぐ（取り直している間も同じパックとして扱う）
-        publish(PackOfferTracker.Offer(url, tracker.current()?.takeIf { it.url == url }?.sha1))
+        publish(PackOfferTracker.Offer(url, tracker.current()?.takeIf { it.url == url }?.contentId))
         val mine = generation
         val client = hasher ?: UrlHasher().also { hasher = it }
         runCatching { client.hash(url) }.getOrElse {
@@ -134,7 +216,7 @@ object ResourcePackDistributor {
     private fun warnHash(url: String, error: Throwable) {
         if (warnedHash) return
         warnedHash = true
-        warn("リソースパックの URL から SHA-1 を計算できませんでした。ハッシュ無しで配ります（$url）: ${error.cause?.message ?: error.message}".toComponent(NamedTextColor.YELLOW))
+        warn("リソースパックの URL の中身を取得できませんでした。中身が変わっても検知できないため、URL が変わった時だけ送り直します（$url）: ${error.cause?.message ?: error.message}".toComponent(NamedTextColor.YELLOW))
     }
 
     private fun bundleOf(pack: PackResult): PackBundle = PackBundle(
@@ -207,6 +289,7 @@ object ResourcePackDistributor {
     /** プレイヤーへパックを送る。統合版のプレイヤーは飛ばす。そのプレイヤーのスレッドで呼ぶこと。 */
     private fun send(player: Player, offer: PackOfferTracker.Offer) {
         if (!player.isOnline || player.uniqueId.isBedrockPlayer()) return
-        player.addResourcePack(ResourcePackHostConfig.PACK_ID, offer.url, offer.sha1, prompt, required)
+        // ハッシュはクライアントへ渡さない（null。Paper の API で hash は @Nullable で、ハッシュ無しで送る）
+        player.addResourcePack(ResourcePackHostConfig.PACK_ID, offer.url, null as ByteArray?, prompt, required)
     }
 }

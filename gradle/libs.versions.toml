@@ -13,6 +13,8 @@ kotlin = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin"
 
 semver4j = "org.semver4j:semver4j:6.0.0"
 caffeine = "com.github.ben-manes.caffeine:caffeine:3.3.1"
+# BLAKE3（Cloudflare のアセットのマニフェストのハッシュに要る）。Paper 本体にも commons-codec があるため、shade して relocate する
+commons-codec = "commons-codec:commons-codec:1.19.0"
 
 adventure-api = "net.kyori:adventure-api:5.2.0"
 adventure-examination = "net.kyori:examination-api:1.3.0"
@@ -81,7 +83,8 @@ manifestLibrary = [
 
 shadedLibrary = [
     "armormodel",
-    "libby"
+    "libby",
+    "commons-codec"
 ]
 
 [plugins]

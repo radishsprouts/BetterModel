@@ -49,7 +49,7 @@ class PackOfferTrackerTest {
         val tracker = PackOfferTracker()
         assertEquals(Action.SEND, tracker.update(Offer(url, null)))
         assertEquals(Action.NONE, tracker.update(Offer(url, hash(1))))
-        assertEquals(hash(1).toList(), tracker.current()?.sha1?.toList())
+        assertEquals(hash(1).toList(), tracker.current()?.contentId?.toList())
     }
 
     @Test
@@ -66,7 +66,9 @@ class PackOfferTrackerTest {
     fun `不正な設定は既定値に戻して警告する`() {
         val warnings = mutableListOf<String>()
         val config = ResourcePackHostConfig.of(true, "ftp", null, 70000, null, null, null, false, 0, warnings::add)
-        assertEquals(ResourcePackHostConfig.Mode.SELF_HOST, config.mode)
+        assertEquals(ResourcePackHostConfig.Mode.CLOUDFLARE, config.mode)
+        assertEquals(ResourcePackHostConfig.Mode.CLOUDFLARE, ResourcePackHostConfig.DEFAULT.mode)
+        assertEquals(ResourcePackHostConfig.Mode.SELF_HOST, ResourcePackHostConfig.of(true, "self-host", null, 8163, null, null, null, false, 16).mode)
         assertEquals(ResourcePackHostConfig.DEFAULT_PORT, config.port)
         assertEquals("0.0.0.0", config.bindAddress)
         assertEquals(1, config.maxConnections)
