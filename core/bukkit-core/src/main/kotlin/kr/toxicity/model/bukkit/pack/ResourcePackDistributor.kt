@@ -35,10 +35,13 @@ import java.util.concurrent.Executors
 /**
  * BetterModel が作ったリソースパックを、Java 版のプレイヤーへ配る。
  *
- * - cloudflare（既定）: [CloudflarePackPublisher] が BetterModel 専用の Cloudflare Worker へ ZIP をアップロードし、その URL と SHA-1 を渡す。
+ * - cloudflare（既定）: [CloudflarePackPublisher] が BetterModel 専用の Cloudflare Worker へ ZIP をアップロードし、その URL を渡す。
  *   アップロードは仮想スレッドで1本ずつ行い、終わった時点で参加済みのプレイヤーにも送る。失敗しても self-host へは切り替えない
- * - self-host: [PackHttpServer] で ZIP を配り、その URL と SHA-1 をクライアントへ渡す
- * - url: 別の場所に置かれた ZIP の URL を渡す。SHA-1 はその URL の実物を非同期で取って計算し、取れるまではハッシュ無しで送る
+ * - self-host: [PackHttpServer] で ZIP を配り、その URL を渡す
+ * - url: 別の場所に置かれた ZIP の URL を渡す。中身の変更を検知するため、その URL の実物を非同期で取って SHA-1 を計算する（サーバー内だけで使う）
+ *
+ * **ハッシュはどのモードでもクライアントへ渡さない**（社長指示。ハッシュの食い違いによるトラブルを避けるため）。SHA-1 は、
+ * 同じパックを送り直さないための判定と、サーバー側の確認にだけ使う。
  *
  * 参加時に送り、リロードでパックの中身が変わった時だけ接続中のプレイヤーへ送り直す。
  * 統合版（Floodgate）のプレイヤーには送らない。Folia では、プレイヤーの操作を必ずそのプレイヤーのスケジューラで行う。
@@ -197,7 +200,7 @@ object ResourcePackDistributor {
         stopServer()
         val url = config.url
         // 同じ URL ならこれまでに取れたハッシュを引き継ぐ（取り直している間も同じパックとして扱う）
-        publish(PackOfferTracker.Offer(url, tracker.current()?.takeIf { it.url == url }?.sha1))
+        publish(PackOfferTracker.Offer(url, tracker.current()?.takeIf { it.url == url }?.contentId))
         val mine = generation
         val client = hasher ?: UrlHasher().also { hasher = it }
         runCatching { client.hash(url) }.getOrElse {
@@ -213,7 +216,7 @@ object ResourcePackDistributor {
     private fun warnHash(url: String, error: Throwable) {
         if (warnedHash) return
         warnedHash = true
-        warn("リソースパックの URL から SHA-1 を計算できませんでした。ハッシュ無しで配ります（$url）: ${error.cause?.message ?: error.message}".toComponent(NamedTextColor.YELLOW))
+        warn("リソースパックの URL の中身を取得できませんでした。中身が変わっても検知できないため、URL が変わった時だけ送り直します（$url）: ${error.cause?.message ?: error.message}".toComponent(NamedTextColor.YELLOW))
     }
 
     private fun bundleOf(pack: PackResult): PackBundle = PackBundle(
@@ -286,6 +289,7 @@ object ResourcePackDistributor {
     /** プレイヤーへパックを送る。統合版のプレイヤーは飛ばす。そのプレイヤーのスレッドで呼ぶこと。 */
     private fun send(player: Player, offer: PackOfferTracker.Offer) {
         if (!player.isOnline || player.uniqueId.isBedrockPlayer()) return
-        player.addResourcePack(ResourcePackHostConfig.PACK_ID, offer.url, offer.sha1, prompt, required)
+        // ハッシュはクライアントへ渡さない（null。Paper は空のハッシュとして送り、クライアントは検証しない）
+        player.addResourcePack(ResourcePackHostConfig.PACK_ID, offer.url, null as ByteArray?, prompt, required)
     }
 }

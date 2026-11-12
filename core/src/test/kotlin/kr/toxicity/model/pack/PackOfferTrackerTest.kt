@@ -49,7 +49,7 @@ class PackOfferTrackerTest {
         val tracker = PackOfferTracker()
         assertEquals(Action.SEND, tracker.update(Offer(url, null)))
         assertEquals(Action.NONE, tracker.update(Offer(url, hash(1))))
-        assertEquals(hash(1).toList(), tracker.current()?.sha1?.toList())
+        assertEquals(hash(1).toList(), tracker.current()?.contentId?.toList())
     }
 
     @Test

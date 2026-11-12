@@ -9,6 +9,7 @@ package kr.toxicity.model.pack
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import org.apache.commons.codec.digest.Blake3
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
@@ -170,12 +171,7 @@ class CloudflarePackPublisher(
         val account = "$apiBase/accounts/${config.accountId}"
         val path = "/$fileName"
         val encoded = Base64.getEncoder().encode(bundle.bytes)
-        // wrangler と同じ形のハッシュ（base64 の内容 + 拡張子 を SHA-256 にかけた先頭 32 桁）
-        val hash = MessageDigest.getInstance("SHA-256").run {
-            update(encoded)
-            update("zip".toByteArray(Charsets.US_ASCII))
-            digest().toHex().take(32)
-        }
+        val hash = manifestHashOfEncoded(encoded)
 
         val manifest = JsonObject().apply {
             add("manifest", JsonObject().apply {
@@ -361,6 +357,19 @@ class CloudflarePackPublisher(
 
     companion object {
         const val API_BASE = "https://api.cloudflare.com/client/v4"
+
+        /**
+         * マニフェストに入れるファイルのハッシュ。wrangler の `hashFile` と同じ計算
+         * （`BLAKE3(ファイルの base64 + 拡張子（先頭の . を除く）)` の 16 進の先頭 32 桁。拡張子は常に zip）。
+         *
+         * @param content ファイルの中身
+         * @return 32 桁の 16 進文字列
+         */
+        @JvmStatic
+        fun manifestHash(content: ByteArray): String = manifestHashOfEncoded(Base64.getEncoder().encode(content))
+
+        private fun manifestHashOfEncoded(encoded: ByteArray): String =
+            Blake3.hash(encoded + "zip".toByteArray(Charsets.US_ASCII)).toHex().take(32)
 
         /** Cloudflare の Static Assets の 1 ファイルの上限（25 MiB）。 */
         const val MAX_ASSET_BYTES = 26_214_400

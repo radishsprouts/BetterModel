@@ -9,6 +9,7 @@ package kr.toxicity.model.pack
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import org.apache.commons.codec.digest.Blake3
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -251,5 +252,30 @@ class CloudflarePackPublisherTest {
         assertNull(props.getProperty("api-token"))
         assertFalse(file.readText().contains("secret-token"))
         assertEquals(1, dir.resolve(".cache").listFiles()!!.size, "一時ファイルを残さない")
+    }
+
+    @Test
+    fun `BLAKE3 は公式のテストベクタと一致する`() {
+        // BLAKE3 公式（github.com/BLAKE3-team/BLAKE3 の test_vectors.json）の、入力長 0 と、入力長 1（バイト 0x00）の hash の先頭 32 バイト
+        assertEquals("af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262", Blake3.hash(ByteArray(0)).toHex())
+        assertEquals("2d3adedff11b61f14c886e35afa036736dcd87a74d27b5c1510225d0f592e213", Blake3.hash(byteArrayOf(0)).toHex())
+    }
+
+    @Test
+    fun `マニフェストのハッシュは wrangler の hashFile と同じ値になる`() {
+        // wrangler 同梱の blake3-wasm（E:\Projects\cloudflare\file-server\node_modules\blake3-wasm）で
+        // blake3.hash(contents.toString("base64") + "zip").toString("hex").slice(0, 32) を実行して得た値
+        assertEquals("c2373647be0ce149900d6c8548bf2c6a", CloudflarePackPublisher.manifestHash(ByteArray(0)))
+        assertEquals("66bd22b344574905a85edb89ea084590", CloudflarePackPublisher.manifestHash(ByteArray(256) { it.toByte() }))
+        assertEquals("20ae711611e2ee8ba302b0f90c2a4823", CloudflarePackPublisher.manifestHash(ByteArray(5000) { it.toByte() }))
+    }
+
+    @Test
+    fun `マニフェストへ入れるハッシュと、アップロードする部品の名前が一致する`() {
+        val b = bundle()
+        publisher().publish(b)
+        val hash = CloudflarePackPublisher.manifestHash(b.bytes)
+        assertTrue(calls[0].body.contains("\"hash\":\"$hash\""))
+        assertTrue(calls[1].body.contains("name=\"$hash\""))
     }
 }

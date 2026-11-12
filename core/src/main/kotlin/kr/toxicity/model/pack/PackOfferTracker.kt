@@ -23,11 +23,11 @@ class PackOfferTracker {
 
     /**
      * @property url パックの URL
-     * @property sha1 SHA-1。まだ取れていなければ null（ハッシュ無しで送る）
+     * @property contentId パックの中身の識別（SHA-1）。**クライアントへは渡さない**。送り直すかの判定にだけ使う。まだ取れていなければ null
      */
-    class Offer(val url: String, val sha1: ByteArray?) {
-        override fun equals(other: Any?) = other is Offer && url == other.url && sha1.contentEqualsNullable(other.sha1)
-        override fun hashCode() = 31 * url.hashCode() + (sha1?.contentHashCode() ?: 0)
+    class Offer(val url: String, val contentId: ByteArray?) {
+        override fun equals(other: Any?) = other is Offer && url == other.url && contentId.contentEqualsNullable(other.contentId)
+        override fun hashCode() = 31 * url.hashCode() + (contentId?.contentHashCode() ?: 0)
         private fun ByteArray?.contentEqualsNullable(other: ByteArray?) = if (this == null) other == null else other != null && contentEquals(other)
     }
 
@@ -51,8 +51,8 @@ class PackOfferTracker {
 
     /**
      * 配る内容を更新し、接続中のプレイヤーへの処理を返す。
-     * ハッシュが無い状態から付いた状態になっただけ（URL が同じ）の時は、すでにハッシュ無しで受け取っているので送り直さない。
-     * ハッシュ付きからハッシュ無しに戻った時（取得に失敗した等）も、パックの実体は変わらないので送り直さない。
+     * 識別が無い状態から付いた状態になっただけ（URL が同じ）の時は、すでに同じ URL を送っているので送り直さない。
+     * 識別付きから無しに戻った時（取得に失敗した等）も、パックの実体は変わらないので送り直さない。
      */
     @Synchronized
     fun update(next: Offer?): Action {
@@ -63,8 +63,8 @@ class PackOfferTracker {
             next == null -> Action.REMOVE
             previous == null -> Action.SEND
             previous.url != next.url -> Action.SEND
-            previous.sha1 == null || next.sha1 == null -> Action.NONE
-            previous.sha1.contentEquals(next.sha1) -> Action.NONE
+            previous.contentId == null || next.contentId == null -> Action.NONE
+            previous.contentId.contentEquals(next.contentId) -> Action.NONE
             else -> Action.SEND
         }
     }

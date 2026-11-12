@@ -49,7 +49,7 @@ class PackHttpServerTest {
     private fun send(request: HttpRequest) = client.send(request, HttpResponse.BodyHandlers.ofByteArray())
 
     @Test
-    fun `配ったバイト列と SHA-1 が、クライアントへ渡すハッシュと一致する`() {
+    fun `配ったバイト列が、サーバーが持つ中身（SHA-1 と ETag）と一致する`() {
         val bundle = PackBundle(ByteArray(50_000) { (it * 7).toByte() })
         val server = start(bundle)
         val response = send(HttpRequest.newBuilder(uri(server)).GET().build())
