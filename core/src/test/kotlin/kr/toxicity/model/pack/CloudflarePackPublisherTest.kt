@@ -119,6 +119,31 @@ class CloudflarePackPublisherTest {
 
     private fun isCatalog(url: String) = url.substringBefore('?').endsWith(CloudflarePackPublisher.CATALOG_PATH)
 
+    /**
+     * 偽の Worker の公開状態。Worker を PUT する前は [before] の目録を返し、PUT した後は自分の行（[own]）を足した目録を返す。
+     * 目録以外の URL は [extra] で答える。
+     */
+    private fun world(
+        before: Map<String, ByteArray>,
+        own: ByteArray,
+        extra: (String) -> FetchResult = { FetchResult.NotFound },
+    ): (String) -> FetchResult = { url ->
+        if (isCatalog(url)) {
+            val done = calls.any { it.method == "PUT" && it.path.endsWith("/workers/scripts/bettermodel-pack") }
+            FetchResult.Found((if (done) before + ("/$FILE" to own) else before).let(::catalogJson).toByteArray())
+        } else extra(url)
+    }
+
+    /** 本物の Cloudflare は、すでにある（他の版が持つ）ハッシュを bucket に入れない。[known] のハッシュを要求しない応答にする。 */
+    private fun alreadyKnown(vararg known: ByteArray) {
+        val skip = known.map { CloudflarePackPublisher.manifestHash(it) }.toSet()
+        override = { call, _ ->
+            if (call.path.endsWith("/assets-upload-session")) {
+                ok("""{"jwt":"upload-jwt","buckets":[[${(hashesOf(call.body) - skip).joinToString(",") { "\"$it\"" }}]]}""")
+            } else null
+        }
+    }
+
     private fun calls(method: String, suffix: String) = calls.filter { it.method == method && it.path.endsWith(suffix) }
 
     private fun pathsOf() = calls.map { "${it.method} ${it.path}" }
@@ -395,10 +420,8 @@ class CloudflarePackPublisherTest {
     fun `他のファイルがマニフェストに残り、目録も他の行を引き継いで置かれる`() {
         val other = ByteArray(300) { (it * 7).toByte() }
         val b = bundle()
-        val published = assertIs<PublishResult.Published>(
-            publisher(fetcher = { if (isCatalog(it)) FetchResult.Found(catalogJson(mapOf(OTHER to other)).toByteArray()) else FetchResult.NotFound })
-                .publish(b)
-        )
+        alreadyKnown(other)
+        val published = assertIs<PublishResult.Published>(publisher(fetcher = world(mapOf(OTHER to other), b.bytes)).publish(b))
         assertEquals("https://$DOMAIN/$FILE", published.url)
         val manifest = calls[0].body
         assertTrue(manifest.contains("\"$OTHER\":{\"hash\":\"${CloudflarePackPublisher.manifestHash(other)}\",\"size\":300}"), "他のファイルの行をそのまま載せる")
@@ -415,10 +438,8 @@ class CloudflarePackPublisherTest {
         val old = ByteArray(200) { 1 }
         val other = ByteArray(300) { 2 }
         val b = bundle()
-        val catalog = catalogJson(mapOf("/$FILE" to old, OTHER to other))
-        assertIs<PublishResult.Published>(
-            publisher(fetcher = { if (isCatalog(it)) FetchResult.Found(catalog.toByteArray()) else FetchResult.NotFound }).publish(b)
-        )
+        alreadyKnown(other)
+        assertIs<PublishResult.Published>(publisher(fetcher = world(mapOf("/$FILE" to old, OTHER to other), b.bytes)).publish(b))
         val manifest = calls[0].body
         assertFalse(manifest.contains(CloudflarePackPublisher.manifestHash(old)), "自分の古い行は消える")
         assertTrue(manifest.contains(CloudflarePackPublisher.manifestHash(b.bytes)))
@@ -433,14 +454,10 @@ class CloudflarePackPublisherTest {
         val fetched = CopyOnWriteArrayList<String>()
         // fake の API は、マニフェストの全ハッシュ（他のファイルも）を bucket で要求する
         assertIs<PublishResult.Published>(
-            publisher(fetcher = {
+            publisher(fetcher = world(mapOf(OTHER to other), b.bytes, extra = {
                 fetched += it
-                when {
-                    isCatalog(it) -> FetchResult.Found(catalogJson(mapOf(OTHER to other)).toByteArray())
-                    it.substringBefore('?').endsWith(OTHER) -> FetchResult.Found(other)
-                    else -> FetchResult.NotFound
-                }
-            }).publish(b)
+                if (it.substringBefore('?').endsWith(OTHER)) FetchResult.Found(other) else FetchResult.NotFound
+            })).publish(b)
         )
         assertTrue(fetched.any { it.startsWith("https://$DOMAIN$OTHER?") }, "他のファイルをカスタムドメインから取る")
         val upload = calls("POST", "/workers/assets/upload").single()
