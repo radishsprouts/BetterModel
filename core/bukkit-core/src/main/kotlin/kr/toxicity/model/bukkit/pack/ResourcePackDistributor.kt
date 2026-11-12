@@ -26,10 +26,17 @@ import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerJoinEvent
+import java.io.File
+import java.net.http.HttpClient
+import java.time.Duration
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * BetterModel が作ったリソースパックを、Java 版のプレイヤーへ配る。
  *
+ * - cloudflare（既定）: [CloudflarePackPublisher] が BetterModel 専用の Cloudflare Worker へ ZIP をアップロードし、その URL と SHA-1 を渡す。
+ *   アップロードは仮想スレッドで1本ずつ行い、終わった時点で参加済みのプレイヤーにも送る。失敗しても self-host へは切り替えない
  * - self-host: [PackHttpServer] で ZIP を配り、その URL と SHA-1 をクライアントへ渡す
  * - url: 別の場所に置かれた ZIP の URL を渡す。SHA-1 はその URL の実物を非同期で取って計算し、取れるまではハッシュ無しで送る
  *
@@ -46,6 +53,10 @@ object ResourcePackDistributor {
     private var generation = 0L
     private var warnedLoopback = false
     private var warnedHash = false
+    private var warnedMissing = false
+    private var publisher: CloudflarePackPublisher? = null
+    private var publisherConfig: CloudflarePackConfig? = null
+    private var uploader: ExecutorService? = null
 
     @Volatile
     private var prompt: String? = null
@@ -73,6 +84,7 @@ object ResourcePackDistributor {
         generation++
         stopServer()
         closeHasher()
+        closeCloudflare()
         tracker.update(null)
     }
 
@@ -91,9 +103,76 @@ object ResourcePackDistributor {
             return disable("pack-type が none のため、リソースパックを配りません。")
         }
         when (config.mode) {
+            ResourcePackHostConfig.Mode.CLOUDFLARE -> cloudflare(config, pack)
             ResourcePackHostConfig.Mode.SELF_HOST -> selfHost(config, pack)
             ResourcePackHostConfig.Mode.URL -> urlMode(config)
         }
+    }
+
+    private fun cloudflare(config: ResourcePackHostConfig, pack: PackResult) {
+        stopServer()
+        closeHasher()
+        val cf = config.cloudflare
+        val missing = cf.missing()
+        if (missing.isNotEmpty()) {
+            if (!warnedMissing) {
+                warnedMissing = true
+                warn(
+                    "リソースパックを配れません。config.yml の resource-pack-host.cloudflare に ${missing.joinToString("、")} を設定してください。".toComponent(NamedTextColor.RED)
+                )
+            }
+            return disable(null)
+        }
+        warnedMissing = false
+        val bundle = runCatching { bundleOf(pack) }.getOrElse {
+            return disable("リソースパックの ZIP を読めないため、配りません: ${it.message}", error = true)
+        }
+        val mine = generation
+        val target = ensurePublisher(cf)
+        // 通信はメインスレッド・リージョンのスレッドで行わず、1本ずつ仮想スレッドで行う（アップロードが重ならない）
+        ensureUploader().execute {
+            val result = runCatching { target.publish(bundle) }.getOrElse {
+                PublishResult.Failed("予期しないエラー: ${it.message}")
+            }
+            synchronized(this) {
+                if (mine != generation) return@execute
+                when (result) {
+                    is PublishResult.Published -> publish(PackOfferTracker.Offer(result.url, bundle.sha1))
+                    // 配布先を自宅へ切り替えない。前回配った内容のまま残し、警告だけ出す
+                    is PublishResult.Failed -> warn("リソースパックを Cloudflare へ置けなかったため、新しいパックは配りません: ${result.message}".toComponent(NamedTextColor.RED))
+                }
+            }
+        }
+    }
+
+    private fun ensurePublisher(config: CloudflarePackConfig): CloudflarePackPublisher {
+        publisher?.takeIf { publisherConfig == config }?.let { return it }
+        publisher?.close()
+        val client = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .connectTimeout(Duration.ofSeconds(10))
+            .build()
+        val created = CloudflarePackPublisher(
+            config = config,
+            stateFile = File(File(PLATFORM.dataFolder(), ".cache"), "cloudflare-pack.properties"),
+            verifier = CloudflarePackPublisher.downloadVerifier(client),
+            client = client,
+        )
+        publisher = created
+        publisherConfig = config
+        return created
+    }
+
+    private fun ensureUploader(): ExecutorService = uploader ?: Executors.newSingleThreadExecutor(
+        Thread.ofVirtual().name("bettermodel-pack-upload").factory()
+    ).also { uploader = it }
+
+    private fun closeCloudflare() {
+        uploader?.shutdownNow()
+        uploader = null
+        publisher?.close()
+        publisher = null
+        publisherConfig = null
     }
 
     private fun selfHost(config: ResourcePackHostConfig, pack: PackResult) {

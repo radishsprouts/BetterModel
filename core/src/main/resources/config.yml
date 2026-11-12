@@ -130,9 +130,29 @@ resource-pack-host:
   # 配布するか。
   enabled: true
   # 配り方。
+  # cloudflare（既定）: パックを作り終えるたびに、BetterModel 専用の Cloudflare Worker（Static Assets だけの Worker）へ
+  #   プラグイン自身がアップロードし、その URL をプレイヤーへ渡します。node や wrangler は要りません（Linux でもこの jar と設定だけで動きます）。
+  #   アップロードに失敗しても、self-host へは切り替えません（警告を出して、新しいパックは配りません）。
   # self-host: BetterModel が自分で HTTP サーバーを立てて、パックの ZIP を配ります。
   # url: 別の場所に置いた ZIP の URL（下の url）をプレイヤーへ渡します。
-  mode: self-host
+  mode: cloudflare
+  # mode が cloudflare の時の設定。他のリソースパックの Worker とは別の、BetterModel 専用の Worker を使います。
+  # （Static Assets は送ったファイルの一覧で版が丸ごと置き換わるため、他のパックと同じ Worker には置きません）
+  cloudflare:
+    # Cloudflare のアカウント ID。空なら環境変数 BETTERMODEL_CLOUDFLARE_ACCOUNT_ID を読みます。
+    account-id: ""
+    # Cloudflare の API トークン。空なら環境変数 BETTERMODEL_CLOUDFLARE_API_TOKEN を読みます（ログには出しません）。
+    # 必要な権限: Account の「Workers Scripts: Edit」（API 文書では Workers Scripts Write）。
+    # custom-domain の付与が権限エラーになる場合は、そのゾーンの「Workers Routes: Edit」を足してください。
+    api-token: ""
+    # BetterModel 専用の Worker の名前。無ければ最初のアップロードで作られます。英小文字・数字・ハイフンだけ。
+    worker-name: bettermodel-pack
+    # カスタムドメイン（例: pack.example.com）。空なら workers.dev の URL
+    # （https://<worker-name>.<アカウントのサブドメイン>.workers.dev/）を使います。
+    # 指定すると Workers のカスタムドメインとして付けます。そのドメインのゾーンが同じアカウントにある必要があります。
+    custom-domain: ""
+    # Worker の compatibility_date。
+    compatibility-date: "2025-09-01"
   # self-host で待ち受けるアドレスとポート。ポートが使えない時は、エラーを出して配布だけを止めます。
   bind-address: 0.0.0.0
   port: 8163

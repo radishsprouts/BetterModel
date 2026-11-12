@@ -18,6 +18,7 @@ import kr.toxicity.model.api.mount.MountController
 import kr.toxicity.model.api.mount.MountControllers
 import kr.toxicity.model.api.platform.PlatformItemStack
 import kr.toxicity.model.api.util.EntityUtil
+import kr.toxicity.model.pack.CloudflarePackConfig
 import kr.toxicity.model.pack.ResourcePackHostConfig
 import kr.toxicity.model.util.ifNull
 import kr.toxicity.model.util.toComponent
@@ -61,6 +62,15 @@ class BetterModelConfigImpl(yaml: ConfigurationSection) : BetterModelConfig {
             required = it.getBoolean("required", false),
             maxConnections = it.getInt("max-connections", ResourcePackHostConfig.DEFAULT_MAX_CONNECTIONS),
             warn = { message -> warn(message.toComponent()) },
+            cloudflare = it.getConfigurationSection("cloudflare").let { cf ->
+                CloudflarePackConfig.of(
+                    accountId = cf?.getString("account-id"),
+                    apiToken = cf?.getString("api-token"),
+                    workerName = cf?.getString("worker-name"),
+                    customDomain = cf?.getString("custom-domain"),
+                    compatibilityDate = cf?.getString("compatibility-date"),
+                )
+            },
         )
     } ?: ResourcePackHostConfig.DEFAULT
     private val metrics = yaml.getBoolean("metrics", true)

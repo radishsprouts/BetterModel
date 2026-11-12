@@ -32,9 +32,13 @@ data class ResourcePackHostConfig(
     val prompt: String,
     val required: Boolean,
     val maxConnections: Int,
+    val cloudflare: CloudflarePackConfig = CloudflarePackConfig.DEFAULT,
 ) {
     /** 配り方。 */
     enum class Mode {
+        /** BetterModel 専用の Cloudflare Worker へアップロードして配る（既定）。 */
+        CLOUDFLARE,
+
         /** BetterModel が HTTP サーバーを立てて配る。 */
         SELF_HOST,
 
@@ -93,13 +97,15 @@ data class ResourcePackHostConfig(
             required: Boolean,
             maxConnections: Int,
             warn: (String) -> Unit = {},
+            cloudflare: CloudflarePackConfig = CloudflarePackConfig.DEFAULT,
         ): ResourcePackHostConfig {
             val parsedMode = when (val key = mode?.trim()?.lowercase()?.replace('_', '-')) {
-                null, "", "self-host" -> Mode.SELF_HOST
+                null, "", "cloudflare" -> Mode.CLOUDFLARE
+                "self-host" -> Mode.SELF_HOST
                 "url" -> Mode.URL
                 else -> {
-                    warn("resource-pack-host.mode が不正です（$key）。self-host で動かします。")
-                    Mode.SELF_HOST
+                    warn("resource-pack-host.mode が不正です（$key）。cloudflare で動かします。")
+                    Mode.CLOUDFLARE
                 }
             }
             val parsedPort = if (port in 1..65535) port else {
@@ -116,6 +122,7 @@ data class ResourcePackHostConfig(
                 prompt = prompt ?: DEFAULT_PROMPT,
                 required = required,
                 maxConnections = maxConnections.coerceAtLeast(1),
+                cloudflare = cloudflare,
             )
         }
     }
