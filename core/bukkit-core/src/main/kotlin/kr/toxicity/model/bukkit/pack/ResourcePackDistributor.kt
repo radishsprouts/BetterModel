@@ -159,6 +159,11 @@ object ResourcePackDistributor {
             config = config,
             stateFile = File(File(PLATFORM.dataFolder(), ".cache"), "cloudflare-pack.properties"),
             verifier = CloudflarePackPublisher.downloadVerifier(client),
+            onWaiting = { url ->
+                synchronized(this) {
+                    warn("カスタムドメインの証明書の発行（DNS の反映）を待っています。$url から取れるまで、最大3分ほど待ちます。".toComponent(NamedTextColor.YELLOW))
+                }
+            },
             client = client,
         )
         publisher = created
