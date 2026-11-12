@@ -18,7 +18,10 @@ import kr.toxicity.model.api.mount.MountController
 import kr.toxicity.model.api.mount.MountControllers
 import kr.toxicity.model.api.platform.PlatformItemStack
 import kr.toxicity.model.api.util.EntityUtil
+import kr.toxicity.model.pack.ResourcePackHostConfig
 import kr.toxicity.model.util.ifNull
+import kr.toxicity.model.util.toComponent
+import kr.toxicity.model.util.warn
 import org.bukkit.Material
 import org.bukkit.configuration.ConfigurationSection
 import org.bukkit.inventory.ItemStack
@@ -45,6 +48,21 @@ class BetterModelConfigImpl(yaml: ConfigurationSection) : BetterModelConfig {
             it.getString("output-folder")?.trim()?.takeIf(String::isNotEmpty) ?: BedrockConfig.DEFAULT_OUTPUT_FOLDER
         )
     } ?: BedrockConfig.DEFAULT
+    /** リソースパックの配布の設定。api の [BetterModelConfig] には載せず、bukkit 側だけで使う。 */
+    val resourcePackHost = yaml.getConfigurationSection("resource-pack-host")?.let {
+        ResourcePackHostConfig.of(
+            enabled = it.getBoolean("enabled", true),
+            mode = it.getString("mode"),
+            bindAddress = it.getString("bind-address"),
+            port = it.getInt("port", ResourcePackHostConfig.DEFAULT_PORT),
+            publicUrl = it.getString("public-url"),
+            url = it.getString("url"),
+            prompt = it.getString("prompt"),
+            required = it.getBoolean("required", false),
+            maxConnections = it.getInt("max-connections", ResourcePackHostConfig.DEFAULT_MAX_CONNECTIONS),
+            warn = { message -> warn(message.toComponent()) },
+        )
+    } ?: ResourcePackHostConfig.DEFAULT
     private val metrics = yaml.getBoolean("metrics", true)
     private val sightTrace = yaml.getBoolean("sight-trace", true)
     private val mergeWithExternalResources = yaml.getBoolean("merge-with-external-resources", true)

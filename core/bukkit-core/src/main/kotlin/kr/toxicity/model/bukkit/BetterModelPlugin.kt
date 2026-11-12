@@ -22,6 +22,7 @@ import kr.toxicity.model.api.tracker.Tracker
 import kr.toxicity.model.api.version.MinecraftVersion
 import kr.toxicity.model.bukkit.command.startBukkitCommand
 import kr.toxicity.model.bukkit.configuration.PluginConfiguration
+import kr.toxicity.model.bukkit.pack.ResourcePackDistributor
 import kr.toxicity.model.bukkit.util.ADVENTURE_PLATFORM
 import kr.toxicity.model.bukkit.util.audience
 import kr.toxicity.model.bukkit.util.registerListener
@@ -86,6 +87,7 @@ abstract class BetterModelPlugin : AbstractBetterModelPlugin() {
             "Build number: ${props.snapshot}".toComponent(LIGHT_PURPLE)
         )
         startBukkitCommand()
+        ResourcePackDistributor.start()
         registerListener(object : Listener {
             @EventHandler
             fun PlayerJoinEvent.join() {
@@ -129,6 +131,8 @@ abstract class BetterModelPlugin : AbstractBetterModelPlugin() {
     override fun onDisable() {
         if (!started) return
         started = false
+        // リソースパック配布用のポートを必ず解放する
+        runCatching(ResourcePackDistributor::stop).handleFailure { "Unable to stop resource pack distributor" }
         // 初回リロードが済んでいなくても start() 済みなら end() を呼ぶ（登録済みのハンドラ・リスナーの解除漏れを防ぐ）
         // 1つの manager の失敗で残りの終了処理を飛ばさない
         props.managers.values.forEach {

@@ -120,3 +120,30 @@ bedrock:
   enabled: true
   # 出力先のフォルダ名（plugins/BetterModel/ からの相対パス）。
   output-folder: bedrock
+
+# リソースパックの配布の設定。
+# BetterModel が作ったリソースパックを、Java 版のプレイヤーへサーバーから送ります。
+# 送らないと、モデルが紫と黒の格子（テクスチャ無し）で見えます。統合版のプレイヤーには送りません。
+# Nexo など別のプラグインがパックを配る場合（merge-with-external-resources が true で Nexo が入っている時）は、二重に送りません。
+# pack-type が none の時は配りません。
+resource-pack-host:
+  # 配布するか。
+  enabled: true
+  # 配り方。
+  # self-host: BetterModel が自分で HTTP サーバーを立てて、パックの ZIP を配ります。
+  # url: 別の場所に置いた ZIP の URL（下の url）をプレイヤーへ渡します。
+  mode: self-host
+  # self-host で待ち受けるアドレスとポート。ポートが使えない時は、エラーを出して配布だけを止めます。
+  bind-address: 0.0.0.0
+  port: 8163
+  # self-host で、プレイヤーへ渡す URL（http://サーバーのIPかドメイン:ポート/bettermodel.zip）。
+  # 空なら server.properties の server-ip（空なら 127.0.0.1）とポートから作りますが、それでは外のプレイヤーには届きません。
+  public-url: ""
+  # url モードで、ZIP が置かれている URL。
+  url: ""
+  # 適用を尋ねる時の文。
+  prompt: "このサーバーのモデルを表示するためのリソースパックです。適用してください。"
+  # true にすると、適用しないとサーバーに入れません。
+  required: false
+  # self-host で同時に処理するリクエストの上限。
+  max-connections: 16

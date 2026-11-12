@@ -12,8 +12,11 @@ import kr.toxicity.model.api.BetterModelConfig.PackType.*
 import kr.toxicity.model.api.pack.*
 import kr.toxicity.model.manager.ReloadPipeline
 import net.kyori.adventure.text.format.NamedTextColor
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.OutputStream
 import java.nio.file.Files
+import java.time.LocalDateTime
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.stream.Collectors
 import java.util.zip.CRC32
@@ -130,25 +133,7 @@ class ZipGenerator : PackGenerator {
         // ZIP は一時ファイルへ書いてから移す。ビルドが途中で止まっても壊れた ZIP が残らない。
         val temp = Files.createTempFile(file.absoluteFile.parentFile.toPath(), file.nameWithoutExtension, ".tmp")
         try {
-            ZipOutputStream(temp.outputStream().buffered()).use { zip ->
-                zip.setLevel(Deflater.DEFAULT_COMPRESSION)
-                zip.setComment("BetterModel's generated resource pack.")
-                result.stream().forEach { packByte ->
-                    val name = packByte.path().path()
-                    val bytes = packByte.bytes()
-                    val entry = ZipEntry(name)
-                    if (name.endsWith(".png", ignoreCase = true)) {
-                        // PNG は圧縮済みなので、もう一度圧縮しても CPU の無駄になる。
-                        entry.method = ZipEntry.STORED
-                        entry.size = bytes.size.toLong()
-                        entry.compressedSize = bytes.size.toLong()
-                        entry.crc = CRC32().apply { update(bytes) }.value
-                    }
-                    zip.putNextEntry(entry)
-                    zip.write(bytes)
-                    zip.closeEntry()
-                }
-            }
+            temp.outputStream().buffered().use(result::writeZip)
             moveReplacing(temp, file.toPath())
         } finally {
             Files.deleteIfExists(temp)
@@ -166,6 +151,40 @@ class NoneGenerator : PackGenerator {
         }
     }
 }
+
+/** ZIP の各ファイルの更新日時。固定にして、同じ中身なら毎回同じバイト列（同じ SHA-1）になるようにする。 */
+private val ZIP_FIXED_TIME = LocalDateTime.of(1980, 1, 1, 0, 0)
+
+/**
+ * パックの中身を ZIP として書き出す。ファイルへの書き出しと、配布用のメモリ上の ZIP で同じ形になる。
+ *
+ * @param out 書き出し先。閉じるのは呼び出し側
+ */
+fun PackResult.writeZip(out: OutputStream) {
+    val zip = ZipOutputStream(out)
+    zip.setLevel(Deflater.DEFAULT_COMPRESSION)
+    zip.setComment("BetterModel's generated resource pack.")
+    stream().forEach { packByte ->
+        val name = packByte.path().path()
+        val bytes = packByte.bytes()
+        val entry = ZipEntry(name)
+        entry.timeLocal = ZIP_FIXED_TIME
+        if (name.endsWith(".png", ignoreCase = true)) {
+            // PNG は圧縮済みなので、もう一度圧縮しても CPU の無駄になる。
+            entry.method = ZipEntry.STORED
+            entry.size = bytes.size.toLong()
+            entry.compressedSize = bytes.size.toLong()
+            entry.crc = CRC32().apply { update(bytes) }.value
+        }
+        zip.putNextEntry(entry)
+        zip.write(bytes)
+        zip.closeEntry()
+    }
+    zip.finish()
+}
+
+/** パックの中身を ZIP のバイト列にする（フォルダ形式のパックを配る時に使う）。 */
+fun PackResult.toZipBytes(): ByteArray = ByteArrayOutputStream().also { writeZip(it) }.toByteArray()
 
 fun PackZipper.writeToResult(pipeline: ReloadPipeline, dir: File? = null): PackResult {
     val build = build()

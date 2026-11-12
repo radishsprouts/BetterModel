@@ -11,6 +11,7 @@
 
 - Blockbench で作ったモデルを、ゲームの中の MOB・プレイヤーなどに着せて、動かす。
 - **統合版(Bedrock)のプレイヤーにも、Java 版と同じモデルが見える。** 統合版のプレイヤーは Geyser 経由で入る。BetterModel が統合版用のモデルとテクスチャを自分のフォルダへ書き出し、Geyser 側の拡張(KadoDisplayEntity)がそれを読んで統合版のクライアントに見せる。統合版のプレイヤーが自分で何かを入れる必要は無い。
+- **Java 版のプレイヤーは、サーバーに入るとリソースパックの適用を尋ねられる。** 受け入れるとモデルが正しく見える。受け入れないと、モデルが紫と黒の格子(テクスチャ無し)で見える。尋ねる文は「このサーバーのモデルを表示するためのリソースパックです。適用してください。」(運営が変えられる)。適用を必須にする設定もあり、必須の時は適用しないとサーバーに入れない。サーバーが自分でパックを配る(既定)か、運営が別の場所に置いたパックを案内する。統合版のプレイヤーには出ない(統合版は別の仕組みで見える)。パックの中身が変わった時(サーバーの再読み込みでモデルを足した時など)だけ、接続中のプレイヤーに新しい適用の確認が出る。変わらなければ出ない。
 - 遠くのプレイヤーへ送る動きの量を、距離に応じて減らす(下の「数値」)。
 - **モデルを付けた MOB の名前は、モデルの上に出る。名前を後から変えると、モデルの上の名前も変わる。** 名札で付け替えた時も、他のプラグインが名前を変えた時も同じ(例: 体力を名前に出すボス)。変えた名前は次の更新(ゲームの 1 tick 以内)で、そのモデルを見ている全員に届く。名前を消すと、モデルの上の名前も消える。名前が変わっていない間は何も送り直さない。
   - **名札で名前を付けた MOB は、バニラと同じく、見た時に名前が出る。** 見た時とは、5 ブロック以内で、その MOB のほうを見ている時。名札は名前を付けるだけで「名前を常に表示する」設定は立てないので、離れた場所や別の方向を見ている時は出ない。
@@ -61,6 +62,15 @@
 | 1段目の間引き幅 | `animation-lod-near-step` | 2(送る量が 1/2) | 本番に未導入 |
 | 間引きをさらに増やす距離(2段目) | `animation-lod-far-distance` | 32 ブロック | 本番に未導入 |
 | 2段目の間引き幅 | `animation-lod-far-step` | 4(送る量が 1/4) | 本番に未導入 |
+| パックを配るか | `resource-pack-host.enabled` | `true` | 本番に未導入 |
+| 配り方 | `resource-pack-host.mode` | `self-host`(サーバーが自分で配る)。`url` にすると別の場所に置いたパックの URL を案内する | 本番に未導入 |
+| 配る待ち受けのアドレス | `resource-pack-host.bind-address` | `0.0.0.0` | 本番に未導入 |
+| 配る待ち受けのポート | `resource-pack-host.port` | `8163`(ゲームのポートとは別に、外から届くように開ける) | 本番に未導入 |
+| プレイヤーへ案内する URL | `resource-pack-host.public-url` | 空(空だとサーバーの IP か 127.0.0.1 から作るが、外のプレイヤーには届かない。本番では `http://サーバーのIPかドメイン:ポート/bettermodel.zip` を書く) | 本番に未導入 |
+| url モードのパックの URL | `resource-pack-host.url` | 空 | 本番に未導入 |
+| 適用を尋ねる文 | `resource-pack-host.prompt` | 「このサーバーのモデルを表示するためのリソースパックです。適用してください。」 | 本番に未導入 |
+| 適用を必須にするか | `resource-pack-host.required` | `false` | 本番に未導入 |
+| 配る側の同時処理の上限 | `resource-pack-host.max-connections` | 16 | 本番に未導入 |
 
 ## 書き出されるファイル(運営向けの情報)
 
@@ -73,10 +83,22 @@
 
 `plugins/BetterModel/.cache/skins/` には、プレイヤーモデルが使う皮膚・マントの PNG(`<ハッシュ>.png`)が保存される。皮膚の URL ごとに1ファイルで、プレイヤーが入り直しても、サーバーを再起動しても、同じ皮膚なら再びダウンロードしない。皮膚を変えると URL が変わるので、新しい皮膚は自動で取り直される。30日以上使われていないファイルと、合計 64MB を超えた分(古い順)は、起動時とリロード時に自動で消える。手で消しても、次に必要になった時に取り直すだけで害は無い。
 
+配るパックについて(運営向けの情報):
+
+- 配るパスは `/bettermodel.zip` の1つだけ。GET と HEAD だけに答え、それ以外は 405、別のパスは 404。ETag(パックの SHA-1)に答える。
+- パックの SHA-1 を、クライアントへ渡すハッシュにする。url モードでは、案内する URL の実物をサーバーが取って SHA-1 を計算する(取れるまではハッシュ無しで案内し、取れたら次から付ける)。
+- 配るパックは固定の ID を持ち、同じ ID で差し替わる。`pack-type` が `zip` なら書き出した ZIP を、`folder` ならメモリ上で ZIP を作って配る。`none` の時は配らない。
+- Nexo が入っていて `merge-with-external-resources` が `true` の時は、Nexo がパックを配るので BetterModel は配らない(二重に送らない)。
+- 配る用のポートが使えない時は、エラーを1行出して配ることだけをやめる(サーバーは起動する)。サーバーを止めるとポートも解放される。
+
 ## プレイヤーに出るメッセージ(原文のまま)
 
 | 場面 | メッセージ |
 |---|---|
+| 適用の確認(Java 版、入った時) | `resource-pack-host.prompt` の文(既定は上の「数値」の表) |
+| パックを配り始めた時(コンソール) | `リソースパックを配ります: <URL>` |
+| ポートが使えない時(コンソール) | `リソースパックの配布用ポート <アドレス>:<ポート> を使えません。配布だけを止めます: <理由>` |
+| URL が空のまま外へ届かない時(コンソール、起動後1回) | `resource-pack-host.public-url が空のため <URL> をプレイヤーへ渡します。外のプレイヤーにはこの URL は届きません。` |
 | 書き出し成功時(コンソール) | `統合版用の出力を書き出しました: <フォルダ> (骨 <n> 件、手足 <m> 件、版 <版>)` |
 | 書き出し失敗時(コンソール) | `統合版用の出力の書き出しに失敗しました。` |
 | 衝突でモデルを飛ばした時(コンソール) | `統合版の骨のキー <キー> が衝突したため、次のモデルの統合版の出力を飛ばします: <モデル名>` |
@@ -107,6 +129,8 @@
 - 「見た時」の視線の角度の幅は、wiki に書く前にソース(`EntityUtil`)で確かめる。
 - プレイヤーの姿のモデルが再読み込みで外れず皮膚も戻ること、MOB に着せたモデルが再起動を越えて残ることは、ビルドと単体テスト(保存データの読み書き・古い形式の読み込み・型に合った表を引く判定)までしか確かめていない。ゲームの中で、皮膚を指定して着せた MOB に再読み込みをかけて確かめる。
 
+- リソースパックの配布は、ビルドと単体テスト(配ったバイト列と SHA-1 の一致・404・405・ETag・ポートが使えない時・統合版の判定・送り直しの判定)までしか確かめていない。ゲームの中で、Java 版のクライアントが入った時に適用の確認が出て、受け入れるとモデルが正しく見えることは未確認。
+
 ## 根拠
 
 | 事実 | 場所 |
@@ -123,3 +147,6 @@
 | 保存する皮膚(プロフィールの id と名前)。無い・不明なら既定の皮膚 | `api/src/main/java/kr/toxicity/model/api/tracker/TrackerData.java`(`profile`、`restorableProfile`)、`api/src/main/java/kr/toxicity/model/api/tracker/EntityTracker.java`(`asTrackerData`) |
 | 保存したモデルの型(GENERAL / PLAYER)に合った表から付け直す。型が無い古い保存は GENERAL → PLAYER の順で引く | `api/src/main/java/kr/toxicity/model/api/tracker/TrackerData.java`(`type`、`resolve`)、`api/src/main/java/kr/toxicity/model/api/tracker/EntityTrackerRegistry.java`(`load`) |
 | `animation-lod-*` の既定値 | `core/bukkit-core/src/main/kotlin/kr/toxicity/model/bukkit/BetterModelConfigImpl.kt`(`animationLod*`) |
+| `resource-pack-host` の既定値・不正な値の扱い・案内する URL の作り方・パックの固定 ID・統合版の判定 | `core/src/main/resources/config.yml`(`resource-pack-host:`)、`core/src/main/kotlin/kr/toxicity/model/pack/ResourcePackHostConfig.kt` |
+| パックを配る HTTP(パス・405/404・ETag・同時処理の上限・ポートが使えない時) | `core/src/main/kotlin/kr/toxicity/model/pack/PackHttpServer.kt` |
+| 参加時に送る・変わった時だけ送り直す・Nexo と二重に送らない・統合版を飛ばす・プレイヤーごとのスケジューラ | `core/bukkit-core/src/main/kotlin/kr/toxicity/model/bukkit/pack/ResourcePackDistributor.kt`、`core/src/main/kotlin/kr/toxicity/model/pack/PackOfferTracker.kt` |
