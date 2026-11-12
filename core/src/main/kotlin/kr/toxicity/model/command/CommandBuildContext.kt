@@ -29,5 +29,7 @@ class CommandBuildContext(
         root.build().forEach {
             manager.command(it)
         }
+        // Cloud 2.1.0 が解析中に行う任意引数ノードへの書き込みを、登録直後に済ませておく（詳細は primeOptionalOwners）。
+        manager.commandTree().rootNode().primeOptionalOwners()
     }
 }
