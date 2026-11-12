@@ -65,9 +65,9 @@
 | パックを配るか | `resource-pack-host.enabled` | `true` | 本番に未導入 |
 | 配り方 | `resource-pack-host.mode` | `cloudflare`(BetterModel 専用の Cloudflare Worker へアップロードして配る)。`self-host` にするとサーバーが自分で配り、`url` にすると別の場所に置いたパックの URL を案内する | 本番に未導入 |
 | Cloudflare のアカウント ID | `resource-pack-host.cloudflare.account-id` | 空(空なら環境変数 `BETTERMODEL_CLOUDFLARE_ACCOUNT_ID`)。足りない時は設定の場所を1回警告して配らない | 本番に未導入 |
-| Cloudflare の API トークン | `resource-pack-host.cloudflare.api-token` | 空(空なら環境変数 `BETTERMODEL_CLOUDFLARE_API_TOKEN`。ログには出さない)。権限は Account の Workers Scripts: Edit | 本番に未導入 |
+| Cloudflare の API トークン | `resource-pack-host.cloudflare.api-token` | 空(空なら環境変数 `BETTERMODEL_CLOUDFLARE_API_TOKEN`。ログには出さない)。権限はアカウントの Workers Scripts Write と、ゾーン kaiware.games の Workers Routes Write | 本番に未導入 |
 | 専用 Worker の名前 | `resource-pack-host.cloudflare.worker-name` | `bettermodel-pack`(無ければ最初のアップロードで作る。他のリソースパックの Worker とは別) | 本番に未導入 |
-| カスタムドメイン | `resource-pack-host.cloudflare.custom-domain` | 空(空なら `https://<worker-name>.<アカウントのサブドメイン>.workers.dev/`) | 本番に未導入 |
+| カスタムドメイン | `resource-pack-host.cloudflare.custom-domain` | `bettermodel.minecraft.kaiware.games`(必須。workers.dev は使わず、Worker の workers.dev と preview の URL はアップロードのたびに無効にする。空にすると何もアップロードせず警告して配らない。ゾーン kaiware.games が API トークンと同じアカウントにある必要がある。`resource.minecraft.kaiware.games`(別のリソースパックを配る Worker)は設定してもアップロードしない。別の Worker や DNS レコードが既にあるホスト名は上書きせず警告して止まる) | 本番に未導入 |
 | Worker の compatibility_date | `resource-pack-host.cloudflare.compatibility-date` | `2025-09-01` | 本番に未導入 |
 | 配る待ち受けのアドレス | `resource-pack-host.bind-address` | `0.0.0.0` | 本番に未導入 |
 | 配る待ち受けのポート | `resource-pack-host.port` | `8163`(ゲームのポートとは別に、外から届くように開ける) | 本番に未導入 |

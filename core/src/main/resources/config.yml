@@ -142,15 +142,20 @@ resource-pack-host:
     # Cloudflare のアカウント ID。空なら環境変数 BETTERMODEL_CLOUDFLARE_ACCOUNT_ID を読みます。
     account-id: ""
     # Cloudflare の API トークン。空なら環境変数 BETTERMODEL_CLOUDFLARE_API_TOKEN を読みます（ログには出しません）。
-    # 必要な権限: Account の「Workers Scripts: Edit」（API 文書では Workers Scripts Write）。
-    # custom-domain の付与が権限エラーになる場合は、そのゾーンの「Workers Routes: Edit」を足してください。
+    # 必要な権限:
+    #   アカウントの「Workers Scripts Write」（ダッシュボードでは Workers Scripts: Edit）
+    #   ゾーン kaiware.games の「Workers Routes Write」（ダッシュボードでは Workers Routes: Edit）
     api-token: ""
     # BetterModel 専用の Worker の名前。無ければ最初のアップロードで作られます。英小文字・数字・ハイフンだけ。
     worker-name: bettermodel-pack
-    # カスタムドメイン（例: pack.example.com）。空なら workers.dev の URL
-    # （https://<worker-name>.<アカウントのサブドメイン>.workers.dev/）を使います。
-    # 指定すると Workers のカスタムドメインとして付けます。そのドメインのゾーンが同じアカウントにある必要があります。
-    custom-domain: ""
+    # BetterModel 専用のカスタムドメイン（必須）。Workers のカスタムドメインとして付け、この URL でパックを配ります。
+    # - workers.dev は使いません（Worker の workers.dev と preview の URL は、アップロードのたびに無効にします）。
+    #   空にすると、何もアップロードせず警告を出して、パックを配りません。
+    # - ドメインのゾーン（kaiware.games）が、api-token と同じ Cloudflare アカウントにある必要があります。
+    # - file-server のリソースパックの Worker が使っている resource.minecraft.kaiware.games は入れてはいけません。
+    #   入れると、他のパックを配っている Worker からホスト名を奪うおそれがあるため、設定してもアップロードしません。
+    # - すでに別の Worker が使っているホスト名や、DNS レコードがあるホスト名は上書きせず、警告を出して止まります。
+    custom-domain: bettermodel.minecraft.kaiware.games
     # Worker の compatibility_date。
     compatibility-date: "2025-09-01"
   # self-host で待ち受けるアドレスとポート。ポートが使えない時は、エラーを出して配布だけを止めます。
